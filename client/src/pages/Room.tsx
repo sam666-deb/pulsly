@@ -220,33 +220,15 @@ export function Room({ roomId, onLeave }: { roomId: string; onLeave: () => void 
             <ScreenShareIcon />
           </button>
 
-          <div className="reaction-picker-wrap">
-            {reactionPickerOpen && (
-              <div className="reaction-picker">
-                {REACTION_EMOJI.map((emoji) => (
-                  <button
-                    key={emoji}
-                    onClick={() => {
-                      sendReaction(emoji);
-                      setReactionPickerOpen(false);
-                    }}
-                    aria-label={`Send ${emoji} reaction`}
-                  >
-                    {emoji}
-                  </button>
-                ))}
-              </div>
-            )}
-            <button
-              className="control"
-              onClick={() => setReactionPickerOpen((v) => !v)}
-              disabled={status !== "connected"}
-              title="Send a reaction"
-              aria-label="Send a reaction"
-            >
-              <SmileIcon />
-            </button>
-          </div>
+          <button
+            className={reactionPickerOpen ? "control active" : "control"}
+            onClick={() => setReactionPickerOpen((v) => !v)}
+            disabled={status !== "connected"}
+            title="Send a reaction"
+            aria-label="Send a reaction"
+          >
+            <SmileIcon />
+          </button>
 
           <button
             className="control"
@@ -261,6 +243,23 @@ export function Room({ roomId, onLeave }: { roomId: string; onLeave: () => void 
             <LeaveIcon />
           </button>
         </div>
+
+        {reactionPickerOpen && (
+          <div className="reaction-picker">
+            {REACTION_EMOJI.map((emoji) => (
+              <button
+                key={emoji}
+                onClick={() => {
+                  sendReaction(emoji);
+                  setReactionPickerOpen(false);
+                }}
+                aria-label={`Send ${emoji} reaction`}
+              >
+                {emoji}
+              </button>
+            ))}
+          </div>
+        )}
       </div>
 
       {chatOpen && (
