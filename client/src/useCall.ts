@@ -16,12 +16,20 @@ export type CallStatus =
   | "media-denied"
   | "error";
 
+export interface ChatMessage {
+  text: string;
+  self: boolean;
+  ts: number;
+}
+
 export function useCall(room: string) {
   const [status, setStatus] = useState<CallStatus>("requesting-media");
   const [localStream, setLocalStream] = useState<MediaStream | null>(null);
   const [remoteStream, setRemoteStream] = useState<MediaStream | null>(null);
   const [micOn, setMicOn] = useState(true);
   const [cameraOn, setCameraOn] = useState(true);
+  const [screenStream, setScreenStream] = useState<MediaStream | null>(null);
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
 
   const wsRef = useRef<WebSocket | null>(null);
   const pcRef = useRef<RTCPeerConnection | null>(null);
@@ -30,16 +38,29 @@ export function useCall(room: string) {
   const pendingCandidatesRef = useRef<RTCIceCandidateInit[]>([]);
   const remoteStreamRef = useRef<MediaStream>(new MediaStream());
   const iceServersRef = useRef<RTCIceServer[]>([]);
+  const dataChannelRef = useRef<RTCDataChannel | null>(null);
+  const screenStreamRef = useRef<MediaStream | null>(null);
+  const localStreamRef = useRef<MediaStream | null>(null);
 
   const send = useCallback((message: ClientMessage) => {
     wsRef.current?.send(JSON.stringify(message));
   }, []);
 
   const teardown = useCallback(() => {
+    screenStreamRef.current?.getTracks().forEach((t) => t.stop());
+    screenStreamRef.current = null;
+    dataChannelRef.current = null;
     pcRef.current?.close();
     pcRef.current = null;
     wsRef.current?.close();
     wsRef.current = null;
+  }, []);
+
+  const setupDataChannel = useCallback((channel: RTCDataChannel) => {
+    dataChannelRef.current = channel;
+    channel.onmessage = (event) => {
+      setMessages((prev) => [...prev, { text: event.data, self: false, ts: Date.now() }]);
+    };
   }, []);
 
   const createPeerConnection = useCallback(
@@ -50,6 +71,8 @@ export function useCall(room: string) {
       for (const track of stream.getTracks()) {
         pc.addTrack(track, stream);
       }
+
+      pc.ondatachannel = (event) => setupDataChannel(event.channel);
 
       pc.ontrack = (event) => {
         remoteStreamRef.current.addTrack(event.track);
@@ -73,7 +96,7 @@ export function useCall(room: string) {
 
       return pc;
     },
-    [send],
+    [send, setupDataChannel],
   );
 
   const handleSignal = useCallback(
@@ -132,6 +155,7 @@ export function useCall(room: string) {
         stream.getTracks().forEach((t) => t.stop());
         return;
       }
+      localStreamRef.current = stream;
       setLocalStream(stream);
       setStatus("connecting");
 
@@ -154,10 +178,11 @@ export function useCall(room: string) {
             setStatus("waiting-for-peer");
           }
         } else if (msg.type === "peer-joined") {
-          // We were already here — we initiate the offer.
+          // We were already here — we initiate the offer, and own the data channel.
           peerIdRef.current = msg.peerId;
           setStatus("negotiating");
           const pc = createPeerConnection(stream!, msg.peerId);
+          setupDataChannel(pc.createDataChannel("chat"));
           pc.createOffer()
             .then((offer) => pc.setLocalDescription(offer).then(() => offer))
             .then((offer) => {
@@ -171,6 +196,11 @@ export function useCall(room: string) {
           handleSignal(msg.from, msg.data);
         } else if (msg.type === "peer-left") {
           setStatus("peer-left");
+          screenStreamRef.current?.getTracks().forEach((t) => t.stop());
+          screenStreamRef.current = null;
+          setScreenStream(null);
+          dataChannelRef.current = null;
+          setMessages([]);
           pcRef.current?.close();
           pcRef.current = null;
           remoteStreamRef.current = new MediaStream();
@@ -210,10 +240,63 @@ export function useCall(room: string) {
     setCameraOn(next);
   }, [localStream, cameraOn]);
 
+  const stopScreenShare = useCallback(() => {
+    const sender = pcRef.current?.getSenders().find((s) => s.track?.kind === "video");
+    screenStreamRef.current?.getTracks().forEach((t) => t.stop());
+    screenStreamRef.current = null;
+    setScreenStream(null);
+    const camTrack = localStreamRef.current?.getVideoTracks()[0] ?? null;
+    if (sender && camTrack) sender.replaceTrack(camTrack);
+  }, []);
+
+  const toggleScreenShare = useCallback(async () => {
+    const pc = pcRef.current;
+    if (!pc) return;
+
+    if (screenStreamRef.current) {
+      stopScreenShare();
+      return;
+    }
+
+    let display: MediaStream;
+    try {
+      display = await navigator.mediaDevices.getDisplayMedia({ video: true });
+    } catch {
+      return;
+    }
+    const screenTrack = display.getVideoTracks()[0];
+    screenStreamRef.current = display;
+    setScreenStream(display);
+    screenTrack.onended = stopScreenShare;
+
+    const sender = pc.getSenders().find((s) => s.track?.kind === "video");
+    if (sender) await sender.replaceTrack(screenTrack);
+  }, [stopScreenShare]);
+
+  const sendMessage = useCallback((text: string) => {
+    const channel = dataChannelRef.current;
+    if (!channel || channel.readyState !== "open" || !text.trim()) return;
+    channel.send(text);
+    setMessages((prev) => [...prev, { text, self: true, ts: Date.now() }]);
+  }, []);
+
   const leave = useCallback(() => {
     localStream?.getTracks().forEach((t) => t.stop());
     teardown();
   }, [localStream, teardown]);
 
-  return { status, localStream, remoteStream, micOn, cameraOn, toggleMic, toggleCamera, leave };
+  return {
+    status,
+    localStream,
+    remoteStream,
+    micOn,
+    cameraOn,
+    toggleMic,
+    toggleCamera,
+    screenStream,
+    toggleScreenShare,
+    messages,
+    sendMessage,
+    leave,
+  };
 }

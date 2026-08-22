@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import { useCall } from "./useCall";
 import "./Room.css";
 
@@ -37,11 +37,36 @@ const STATUS_TEXT: Record<string, string> = {
 };
 
 export function Room({ roomId, onLeave }: { roomId: string; onLeave: () => void }) {
-  const { status, localStream, remoteStream, micOn, cameraOn, toggleMic, toggleCamera, leave } =
-    useCall(roomId);
+  const {
+    status,
+    localStream,
+    remoteStream,
+    micOn,
+    cameraOn,
+    toggleMic,
+    toggleCamera,
+    screenStream,
+    toggleScreenShare,
+    messages,
+    sendMessage,
+    leave,
+  } = useCall(roomId);
   const [copied, setCopied] = useState(false);
+  const [chatOpen, setChatOpen] = useState(false);
+  const [draft, setDraft] = useState("");
+  const seenCountRef = useRef(0);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const shareLink = `${window.location.origin}/room/${roomId}`;
+  const unread = chatOpen ? 0 : messages.length - seenCountRef.current;
+
+  useEffect(() => {
+    if (chatOpen) seenCountRef.current = messages.length;
+  }, [chatOpen, messages.length]);
+
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages]);
 
   const copyLink = async () => {
     await navigator.clipboard.writeText(shareLink);
@@ -52,6 +77,12 @@ export function Room({ roomId, onLeave }: { roomId: string; onLeave: () => void 
   const hangUp = () => {
     leave();
     onLeave();
+  };
+
+  const submitMessage = (e: FormEvent) => {
+    e.preventDefault();
+    sendMessage(draft);
+    setDraft("");
   };
 
   return (
@@ -66,7 +97,7 @@ export function Room({ roomId, onLeave }: { roomId: string; onLeave: () => void 
 
       <div className="room-main">
         <div className="video-grid">
-          <VideoTile stream={localStream} muted label="You" />
+          <VideoTile stream={screenStream ?? localStream} muted label="You" />
           {remoteStream && <VideoTile stream={remoteStream} muted={false} label="Them" />}
         </div>
 
@@ -87,11 +118,53 @@ export function Room({ roomId, onLeave }: { roomId: string; onLeave: () => void 
           >
             {cameraOn ? "Camera off" : "Camera on"}
           </button>
+          <button
+            className={screenStream ? "control active" : "control"}
+            onClick={toggleScreenShare}
+            disabled={status !== "connected" && !screenStream}
+          >
+            {screenStream ? "Stop sharing" : "Share screen"}
+          </button>
+          <button className="control chat-toggle" onClick={() => setChatOpen((v) => !v)}>
+            Chat
+            {unread > 0 && <span className="badge">{unread}</span>}
+          </button>
           <button className="control hang-up" onClick={hangUp}>
             Leave
           </button>
         </div>
       </div>
+
+      {chatOpen && (
+        <aside className="chat-panel">
+          <div className="chat-header">
+            <span>Chat</span>
+            <button className="chat-close" onClick={() => setChatOpen(false)} aria-label="Close chat">
+              ×
+            </button>
+          </div>
+          <div className="chat-messages">
+            {messages.length === 0 && <p className="chat-empty">No messages yet.</p>}
+            {messages.map((m, i) => (
+              <div key={i} className={m.self ? "chat-msg self" : "chat-msg"}>
+                {m.text}
+              </div>
+            ))}
+            <div ref={messagesEndRef} />
+          </div>
+          <form className="chat-input-row" onSubmit={submitMessage}>
+            <input
+              value={draft}
+              onChange={(e) => setDraft(e.target.value)}
+              placeholder="Message"
+              aria-label="Chat message"
+            />
+            <button type="submit" disabled={!draft.trim()}>
+              Send
+            </button>
+          </form>
+        </aside>
+      )}
     </main>
   );
 }
