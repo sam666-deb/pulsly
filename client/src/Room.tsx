@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { useCall } from "./useCall";
+import { MicIcon, CameraIcon, ScreenShareIcon, ChatIcon, LeaveIcon } from "./icons";
 import "./Room.css";
 
 function VideoTile({
@@ -108,29 +109,44 @@ export function Room({ roomId, onLeave }: { roomId: string; onLeave: () => void 
         )}
 
         <div className="controls">
-          <button className={micOn ? "control" : "control off"} onClick={toggleMic} disabled={!localStream}>
-            {micOn ? "Mute" : "Unmute"}
+          <button
+            className={micOn ? "control" : "control off"}
+            onClick={toggleMic}
+            disabled={!localStream}
+            title={micOn ? "Mute" : "Unmute"}
+            aria-label={micOn ? "Mute microphone" : "Unmute microphone"}
+          >
+            <MicIcon crossedOut={!micOn} />
           </button>
           <button
             className={cameraOn ? "control" : "control off"}
             onClick={toggleCamera}
             disabled={!localStream}
+            title={cameraOn ? "Turn camera off" : "Turn camera on"}
+            aria-label={cameraOn ? "Turn camera off" : "Turn camera on"}
           >
-            {cameraOn ? "Camera off" : "Camera on"}
+            <CameraIcon crossedOut={!cameraOn} />
           </button>
           <button
             className={screenStream ? "control active" : "control"}
             onClick={toggleScreenShare}
             disabled={status !== "connected" && !screenStream}
+            title={screenStream ? "Stop sharing your screen" : "Share your screen"}
+            aria-label={screenStream ? "Stop sharing your screen" : "Share your screen"}
           >
-            {screenStream ? "Stop sharing" : "Share screen"}
+            <ScreenShareIcon />
           </button>
-          <button className="control chat-toggle" onClick={() => setChatOpen((v) => !v)}>
-            Chat
+          <button
+            className="control"
+            onClick={() => setChatOpen((v) => !v)}
+            title="Chat"
+            aria-label="Toggle chat panel"
+          >
+            <ChatIcon />
             {unread > 0 && <span className="badge">{unread}</span>}
           </button>
-          <button className="control hang-up" onClick={hangUp}>
-            Leave
+          <button className="control hang-up" onClick={hangUp} title="Leave call" aria-label="Leave call">
+            <LeaveIcon />
           </button>
         </div>
       </div>
