@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
-import { Home } from "./Home";
-import { Room } from "./Room";
+import { Home } from "./pages/Home";
+import { Room } from "./pages/Room";
 
 function roomIdFromPath(path: string): string | null {
   const match = path.match(/^\/room\/([\w-]+)$/);

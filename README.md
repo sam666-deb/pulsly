@@ -14,8 +14,13 @@ Browser-based video calling. No accounts, no downloads — start a call, send th
 - 1:1 video calls over a shared room link — no sign-up, no install
 - Real NAT traversal via a self-hosted TURN relay, not just STUN (works across different
   networks — home wifi to cellular, corporate firewalls, the works)
-- In-call text chat over a WebRTC data channel
+- In-call text chat and emoji reactions, both over the same WebRTC data channel
 - Screen sharing
+- Live connection-quality indicator (good/fair/poor, from `RTCPeerConnection.getStats()`)
+- Call duration timer
+- Noise suppression, echo cancellation, and auto gain on the mic by default
+- Keyboard shortcuts — `M` to mute, `V` for camera, `Esc` to close chat
+- Light/dark theme, persisted per device
 - Mute / camera toggle, connection status, room-full and error handling
 
 ## How it works
@@ -101,8 +106,19 @@ VITE_SIGNALING_URL=wss://pulsly.duckdns.org
 ## Project layout
 
 ```
-client/   React + TypeScript frontend (Vite), deployed to Cloudflare Workers
-server/   WebSocket signaling server (Node + ws), self-hosted on the VM
+client/                 React + TypeScript frontend (Vite), deployed to Cloudflare Workers
+  src/
+    pages/               Home and Room — the two top-level views
+    hooks/               useCall (all WebRTC/signaling logic), useTheme
+    lib/                 ice-servers fetch, shared signaling message types
+    components/          icons.tsx — small hand-drawn SVG icon set
+    App.tsx              route switch between Home and Room
+    main.tsx, index.css  entry point, design tokens, theme variables
+
+server/                 WebSocket signaling server (Node + ws), self-hosted on the VM
+  src/
+    index.ts             room/signal relay + the /ice-servers TURN-credential endpoint
+    types.ts             shared message types
 ```
 
 ## Deploying
@@ -110,9 +126,11 @@ server/   WebSocket signaling server (Node + ws), self-hosted on the VM
 **Client** — from `client/`:
 
 ```bash
-npm run build
-npx wrangler pages deploy dist --project-name=pulsly
+npm run deploy
 ```
+
+(runs the build, then `wrangler deploy` — Cloudflare's Workers-based static-assets hosting,
+configured in `client/wrangler.jsonc`.)
 
 **Server** — build (`npm run build` in `server/`), copy `dist/` to the VM, and restart the
 `pulsly-signaling` systemd service. Environment variables it expects:
@@ -125,7 +143,8 @@ TURN_SECRET=<must match coturn's static-auth-secret>
 
 ## Status
 
-Working and live: 1:1 calling, TURN relay, chat, screen share, permanent zero-cost hosting.
+Working and live: 1:1 calling, TURN relay, chat, reactions, screen share, connection quality,
+call timer, keyboard shortcuts, light/dark theme, permanent zero-cost hosting.
 
 Not yet built: group calls (3+ people, would need a mesh or SFU), rate-limiting on the
 signaling server, recording, accounts.

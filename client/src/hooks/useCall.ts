@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { ClientMessage, ServerMessage, SignalData } from "./signaling-types";
-import { fetchIceServers } from "./ice-servers";
+import type { ClientMessage, ServerMessage, SignalData } from "../lib/signaling-types";
+import { fetchIceServers } from "../lib/ice-servers";
 
 const SIGNALING_URL =
   import.meta.env.VITE_SIGNALING_URL ?? "ws://localhost:8080";
@@ -22,6 +22,16 @@ export interface ChatMessage {
   ts: number;
 }
 
+export interface Reaction {
+  id: number;
+  emoji: string;
+  self: boolean;
+}
+
+export type ConnectionQuality = "good" | "fair" | "poor";
+
+type DataChannelMessage = { kind: "chat"; text: string } | { kind: "reaction"; emoji: string };
+
 export function useCall(room: string) {
   const [status, setStatus] = useState<CallStatus>("requesting-media");
   const [localStream, setLocalStream] = useState<MediaStream | null>(null);
@@ -30,6 +40,9 @@ export function useCall(room: string) {
   const [cameraOn, setCameraOn] = useState(true);
   const [screenStream, setScreenStream] = useState<MediaStream | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [reactions, setReactions] = useState<Reaction[]>([]);
+  const [quality, setQuality] = useState<ConnectionQuality | null>(null);
+  const [connectedAt, setConnectedAt] = useState<number | null>(null);
 
   const wsRef = useRef<WebSocket | null>(null);
   const pcRef = useRef<RTCPeerConnection | null>(null);
@@ -41,12 +54,23 @@ export function useCall(room: string) {
   const dataChannelRef = useRef<RTCDataChannel | null>(null);
   const screenStreamRef = useRef<MediaStream | null>(null);
   const localStreamRef = useRef<MediaStream | null>(null);
+  const statsIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const reactionIdRef = useRef(0);
 
   const send = useCallback((message: ClientMessage) => {
     wsRef.current?.send(JSON.stringify(message));
   }, []);
 
+  const stopQualityPolling = useCallback(() => {
+    if (statsIntervalRef.current) {
+      clearInterval(statsIntervalRef.current);
+      statsIntervalRef.current = null;
+    }
+    setQuality(null);
+  }, []);
+
   const teardown = useCallback(() => {
+    stopQualityPolling();
     screenStreamRef.current?.getTracks().forEach((t) => t.stop());
     screenStreamRef.current = null;
     dataChannelRef.current = null;
@@ -54,13 +78,60 @@ export function useCall(room: string) {
     pcRef.current = null;
     wsRef.current?.close();
     wsRef.current = null;
+  }, [stopQualityPolling]);
+
+  const addReaction = useCallback((emoji: string, self: boolean) => {
+    const id = ++reactionIdRef.current;
+    setReactions((prev) => [...prev, { id, emoji, self }]);
+    setTimeout(() => {
+      setReactions((prev) => prev.filter((r) => r.id !== id));
+    }, 2500);
   }, []);
 
-  const setupDataChannel = useCallback((channel: RTCDataChannel) => {
-    dataChannelRef.current = channel;
-    channel.onmessage = (event) => {
-      setMessages((prev) => [...prev, { text: event.data, self: false, ts: Date.now() }]);
-    };
+  const setupDataChannel = useCallback(
+    (channel: RTCDataChannel) => {
+      dataChannelRef.current = channel;
+      channel.onmessage = (event) => {
+        let msg: DataChannelMessage;
+        try {
+          msg = JSON.parse(event.data);
+        } catch {
+          return;
+        }
+        if (msg.kind === "chat") {
+          setMessages((prev) => [...prev, { text: msg.text, self: false, ts: Date.now() }]);
+        } else if (msg.kind === "reaction") {
+          addReaction(msg.emoji, false);
+        }
+      };
+    },
+    [addReaction],
+  );
+
+  const startQualityPolling = useCallback((pc: RTCPeerConnection) => {
+    if (statsIntervalRef.current) clearInterval(statsIntervalRef.current);
+    statsIntervalRef.current = setInterval(async () => {
+      let rtt = 0;
+      let packetsLost = 0;
+      let packetsReceived = 0;
+      const stats = await pc.getStats();
+      stats.forEach((report) => {
+        if (report.type === "candidate-pair" && report.state === "succeeded" && report.nominated) {
+          rtt = report.currentRoundTripTime ?? 0;
+        }
+        if (report.type === "inbound-rtp" && report.kind === "video") {
+          packetsLost = report.packetsLost ?? 0;
+          packetsReceived = report.packetsReceived ?? 0;
+        }
+      });
+      const total = packetsLost + packetsReceived;
+      const lossRatio = total > 0 ? packetsLost / total : 0;
+      let next: ConnectionQuality;
+      if (rtt < 0.15 && lossRatio < 0.02) next = "good";
+      else if (rtt < 0.3 && lossRatio < 0.05) next = "fair";
+      else next = "poor";
+      setQuality(next);
+    }, 3000);
   }, []);
 
   const createPeerConnection = useCallback(
@@ -90,13 +161,17 @@ export function useCall(room: string) {
       };
 
       pc.onconnectionstatechange = () => {
-        if (pc.connectionState === "connected") setStatus("connected");
+        if (pc.connectionState === "connected") {
+          setStatus("connected");
+          setConnectedAt((prev) => prev ?? Date.now());
+          startQualityPolling(pc);
+        }
         if (pc.connectionState === "failed") setStatus("error");
       };
 
       return pc;
     },
-    [send, setupDataChannel],
+    [send, setupDataChannel, startQualityPolling],
   );
 
   const handleSignal = useCallback(
@@ -138,10 +213,15 @@ export function useCall(room: string) {
 
     async function start() {
       const [mediaResult, iceServers] = await Promise.all([
-        navigator.mediaDevices.getUserMedia({ video: true, audio: true }).then(
-          (s) => ({ ok: true as const, stream: s }),
-          () => ({ ok: false as const, stream: null }),
-        ),
+        navigator.mediaDevices
+          .getUserMedia({
+            video: true,
+            audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+          })
+          .then(
+            (s) => ({ ok: true as const, stream: s }),
+            () => ({ ok: false as const, stream: null }),
+          ),
         fetchIceServers(),
       ]);
       iceServersRef.current = iceServers;
@@ -196,6 +276,9 @@ export function useCall(room: string) {
           handleSignal(msg.from, msg.data);
         } else if (msg.type === "peer-left") {
           setStatus("peer-left");
+          stopQualityPolling();
+          setConnectedAt(null);
+          setReactions([]);
           screenStreamRef.current?.getTracks().forEach((t) => t.stop());
           screenStreamRef.current = null;
           setScreenStream(null);
@@ -276,9 +359,19 @@ export function useCall(room: string) {
   const sendMessage = useCallback((text: string) => {
     const channel = dataChannelRef.current;
     if (!channel || channel.readyState !== "open" || !text.trim()) return;
-    channel.send(text);
+    channel.send(JSON.stringify({ kind: "chat", text }));
     setMessages((prev) => [...prev, { text, self: true, ts: Date.now() }]);
   }, []);
+
+  const sendReaction = useCallback(
+    (emoji: string) => {
+      const channel = dataChannelRef.current;
+      if (!channel || channel.readyState !== "open") return;
+      channel.send(JSON.stringify({ kind: "reaction", emoji }));
+      addReaction(emoji, true);
+    },
+    [addReaction],
+  );
 
   const leave = useCallback(() => {
     localStream?.getTracks().forEach((t) => t.stop());
@@ -297,6 +390,10 @@ export function useCall(room: string) {
     toggleScreenShare,
     messages,
     sendMessage,
+    reactions,
+    sendReaction,
+    quality,
+    connectedAt,
     leave,
   };
 }

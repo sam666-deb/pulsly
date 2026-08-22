@@ -1,7 +1,19 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
-import { useCall } from "./useCall";
-import { MicIcon, CameraIcon, ScreenShareIcon, ChatIcon, LeaveIcon } from "./icons";
+import { useCall } from "../hooks/useCall";
+import { useTheme } from "../hooks/useTheme";
+import {
+  MicIcon,
+  CameraIcon,
+  ScreenShareIcon,
+  ChatIcon,
+  LeaveIcon,
+  SmileIcon,
+  SunIcon,
+  MoonIcon,
+} from "../components/icons";
 import "./Room.css";
+
+const REACTION_EMOJI = ["👍", "❤️", "😂", "🎉", "👏"];
 
 function VideoTile({
   stream,
@@ -37,6 +49,21 @@ const STATUS_TEXT: Record<string, string> = {
   error: "Something went wrong with the connection.",
 };
 
+const QUALITY_LABEL: Record<string, string> = {
+  good: "Connection: good",
+  fair: "Connection: fair",
+  poor: "Connection: poor",
+};
+
+function formatElapsed(ms: number): string {
+  const totalSeconds = Math.max(0, Math.floor(ms / 1000));
+  const h = Math.floor(totalSeconds / 3600);
+  const m = Math.floor((totalSeconds % 3600) / 60);
+  const s = totalSeconds % 60;
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return h > 0 ? `${h}:${pad(m)}:${pad(s)}` : `${pad(m)}:${pad(s)}`;
+}
+
 export function Room({ roomId, onLeave }: { roomId: string; onLeave: () => void }) {
   const {
     status,
@@ -50,16 +77,24 @@ export function Room({ roomId, onLeave }: { roomId: string; onLeave: () => void 
     toggleScreenShare,
     messages,
     sendMessage,
+    reactions,
+    sendReaction,
+    quality,
+    connectedAt,
     leave,
   } = useCall(roomId);
+  const { theme, toggleTheme } = useTheme();
   const [copied, setCopied] = useState(false);
   const [chatOpen, setChatOpen] = useState(false);
+  const [reactionPickerOpen, setReactionPickerOpen] = useState(false);
   const [draft, setDraft] = useState("");
+  const [now, setNow] = useState(Date.now());
   const seenCountRef = useRef(0);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const shareLink = `${window.location.origin}/room/${roomId}`;
   const unread = chatOpen ? 0 : messages.length - seenCountRef.current;
+  const elapsed = connectedAt ? formatElapsed(now - connectedAt) : null;
 
   useEffect(() => {
     if (chatOpen) seenCountRef.current = messages.length;
@@ -68,6 +103,24 @@ export function Room({ roomId, onLeave }: { roomId: string; onLeave: () => void 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
+
+  useEffect(() => {
+    if (!connectedAt) return;
+    const id = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, [connectedAt]);
+
+  useEffect(() => {
+    function onKeyDown(e: KeyboardEvent) {
+      const target = e.target as HTMLElement;
+      if (target.tagName === "INPUT" || target.tagName === "TEXTAREA") return;
+      if (e.key === "m" || e.key === "M") toggleMic();
+      else if (e.key === "v" || e.key === "V") toggleCamera();
+      else if (e.key === "Escape") setChatOpen(false);
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [toggleMic, toggleCamera]);
 
   const copyLink = async () => {
     await navigator.clipboard.writeText(shareLink);
@@ -90,16 +143,46 @@ export function Room({ roomId, onLeave }: { roomId: string; onLeave: () => void 
     <main className="room">
       <header className="room-bar">
         <span className="brand">Pulsly</span>
-        <button className="room-code" onClick={copyLink}>
-          <code>{roomId}</code>
-          <span>{copied ? "Copied" : "Copy link"}</span>
-        </button>
+        <div className="room-bar-right">
+          {elapsed && (
+            <span className="call-timer">
+              {quality && (
+                <span
+                  className={`quality-dot quality-${quality}`}
+                  title={QUALITY_LABEL[quality]}
+                  aria-label={QUALITY_LABEL[quality]}
+                />
+              )}
+              {elapsed}
+            </span>
+          )}
+          <button
+            className="theme-toggle theme-toggle-inline"
+            onClick={toggleTheme}
+            title={theme === "dark" ? "Switch to light theme" : "Switch to dark theme"}
+            aria-label={theme === "dark" ? "Switch to light theme" : "Switch to dark theme"}
+          >
+            {theme === "dark" ? <SunIcon /> : <MoonIcon />}
+          </button>
+          <button className="room-code" onClick={copyLink}>
+            <code>{roomId}</code>
+            <span>{copied ? "Copied" : "Copy link"}</span>
+          </button>
+        </div>
       </header>
 
       <div className="room-main">
         <div className="video-grid">
           <VideoTile stream={screenStream ?? localStream} muted label="You" />
           {remoteStream && <VideoTile stream={remoteStream} muted={false} label="Them" />}
+
+          <div className="reaction-layer" aria-hidden="true">
+            {reactions.map((r) => (
+              <span key={r.id} className={r.self ? "floating-reaction self" : "floating-reaction"}>
+                {r.emoji}
+              </span>
+            ))}
+          </div>
         </div>
 
         {STATUS_TEXT[status] && (
@@ -113,7 +196,7 @@ export function Room({ roomId, onLeave }: { roomId: string; onLeave: () => void 
             className={micOn ? "control" : "control off"}
             onClick={toggleMic}
             disabled={!localStream}
-            title={micOn ? "Mute" : "Unmute"}
+            title={micOn ? "Mute (M)" : "Unmute (M)"}
             aria-label={micOn ? "Mute microphone" : "Unmute microphone"}
           >
             <MicIcon crossedOut={!micOn} />
@@ -122,7 +205,7 @@ export function Room({ roomId, onLeave }: { roomId: string; onLeave: () => void 
             className={cameraOn ? "control" : "control off"}
             onClick={toggleCamera}
             disabled={!localStream}
-            title={cameraOn ? "Turn camera off" : "Turn camera on"}
+            title={cameraOn ? "Turn camera off (V)" : "Turn camera on (V)"}
             aria-label={cameraOn ? "Turn camera off" : "Turn camera on"}
           >
             <CameraIcon crossedOut={!cameraOn} />
@@ -136,6 +219,35 @@ export function Room({ roomId, onLeave }: { roomId: string; onLeave: () => void 
           >
             <ScreenShareIcon />
           </button>
+
+          <div className="reaction-picker-wrap">
+            {reactionPickerOpen && (
+              <div className="reaction-picker">
+                {REACTION_EMOJI.map((emoji) => (
+                  <button
+                    key={emoji}
+                    onClick={() => {
+                      sendReaction(emoji);
+                      setReactionPickerOpen(false);
+                    }}
+                    aria-label={`Send ${emoji} reaction`}
+                  >
+                    {emoji}
+                  </button>
+                ))}
+              </div>
+            )}
+            <button
+              className="control"
+              onClick={() => setReactionPickerOpen((v) => !v)}
+              disabled={status !== "connected"}
+              title="Send a reaction"
+              aria-label="Send a reaction"
+            >
+              <SmileIcon />
+            </button>
+          </div>
+
           <button
             className="control"
             onClick={() => setChatOpen((v) => !v)}

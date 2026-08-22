@@ -1,4 +1,6 @@
 import { useState } from "react";
+import { useTheme } from "../hooks/useTheme";
+import { SunIcon, MoonIcon } from "../components/icons";
 import "./Home.css";
 
 function newRoomId(): string {
@@ -7,9 +9,19 @@ function newRoomId(): string {
 
 export function Home({ onCreateRoom }: { onCreateRoom: (roomId: string) => void }) {
   const [joinCode, setJoinCode] = useState("");
+  const { theme, toggleTheme } = useTheme();
 
   return (
     <main className="home">
+      <button
+        className="theme-toggle"
+        onClick={toggleTheme}
+        title={theme === "dark" ? "Switch to light theme" : "Switch to dark theme"}
+        aria-label={theme === "dark" ? "Switch to light theme" : "Switch to dark theme"}
+      >
+        {theme === "dark" ? <SunIcon /> : <MoonIcon />}
+      </button>
+
       <div className="home-card">
         <span className="eyebrow">Pulsly</span>
         <h1>Video calls, straight from the browser.</h1>

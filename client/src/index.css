@@ -1,4 +1,5 @@
-:root {
+:root,
+:root[data-theme="dark"] {
   --bg: #101512;
   --surface: #161d1a;
   --surface-alt: #1b2320;
@@ -8,9 +9,25 @@
   --accent: #35d6bc;
   --accent-strong: #7fe9d7;
   --danger: #e2685a;
+  color-scheme: dark;
+}
+
+:root[data-theme="light"] {
+  --bg: #f5f6f3;
+  --surface: #ffffff;
+  --surface-alt: #eef1ec;
+  --text: #1b231f;
+  --text-muted: #5c6864;
+  --border: #dbe1db;
+  --accent: #0f8a76;
+  --accent-strong: #0a6a5a;
+  --danger: #a3402f;
+  color-scheme: light;
+}
+
+:root {
   --font-display: "Archivo", system-ui, sans-serif;
   --font-body: "Source Sans 3", system-ui, sans-serif;
-  color-scheme: dark;
 }
 
 * {
@@ -38,4 +55,25 @@ button {
 button:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
+}
+
+.theme-toggle {
+  position: fixed;
+  top: 1.1rem;
+  right: 1.25rem;
+  width: 38px;
+  height: 38px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  color: var(--text-muted);
+  z-index: 30;
+}
+
+.theme-toggle:hover {
+  color: var(--text);
+  border-color: var(--accent);
 }
