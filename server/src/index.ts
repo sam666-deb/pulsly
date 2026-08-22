@@ -1,10 +1,31 @@
-import { randomUUID } from "node:crypto";
+import { createHmac, randomUUID } from "node:crypto";
+import { createServer } from "node:http";
 import { WebSocket, WebSocketServer } from "ws";
 import type { ClientMessage, ServerMessage } from "./types.js";
 
 // Phase 1 scope: 1:1 calls only. Bump this once group calls (phase 3) land.
 const MAX_PEERS_PER_ROOM = 2;
 const PORT = Number(process.env.PORT) || 8080;
+
+// Coturn's static-auth-secret — used to mint short-lived TURN credentials via
+// the standard REST-API scheme (username = expiry timestamp, credential =
+// HMAC-SHA1(secret, username)). Coturn validates this itself; nothing here
+// needs to be trusted beyond keeping the secret off the client.
+const TURN_SECRET = process.env.TURN_SECRET;
+const PUBLIC_HOST = process.env.PUBLIC_HOST ?? "localhost";
+
+function iceServers(): unknown[] {
+  const stun = { urls: `stun:${PUBLIC_HOST}:3478` };
+  if (!TURN_SECRET) return [stun];
+
+  const username = String(Math.floor(Date.now() / 1000) + 24 * 60 * 60);
+  const credential = createHmac("sha1", TURN_SECRET).update(username).digest("base64");
+  return [
+    stun,
+    { urls: `turn:${PUBLIC_HOST}:3478?transport=udp`, username, credential },
+    { urls: `turn:${PUBLIC_HOST}:3478?transport=tcp`, username, credential },
+  ];
+}
 
 interface Peer {
   id: string;
@@ -38,7 +59,17 @@ function leaveRoom(peer: Peer): void {
   }
 }
 
-const wss = new WebSocketServer({ port: PORT });
+const httpServer = createServer((req, res) => {
+  if (req.url === "/ice-servers") {
+    res.setHeader("Access-Control-Allow-Origin", "*");
+    res.setHeader("Content-Type", "application/json");
+    res.end(JSON.stringify(iceServers()));
+    return;
+  }
+  res.writeHead(426, { "Content-Type": "text/plain" }).end("Upgrade Required");
+});
+
+const wss = new WebSocketServer({ server: httpServer });
 
 wss.on("connection", (ws) => {
   let self: Peer | null = null;
@@ -100,4 +131,6 @@ wss.on("connection", (ws) => {
   });
 });
 
-console.log(`Pulsly signaling server listening on ws://localhost:${PORT}`);
+httpServer.listen(PORT, () => {
+  console.log(`Pulsly signaling server listening on ws://localhost:${PORT}`);
+});
