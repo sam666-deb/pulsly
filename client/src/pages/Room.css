@@ -11,11 +11,61 @@
   padding: 1.1rem 1.5rem;
 }
 
-.brand {
+.name-gate {
+  min-height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1.5rem;
+}
+
+.name-gate-card {
+  width: 100%;
+  max-width: 380px;
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+}
+
+.name-gate-card h1 {
   font-family: var(--font-display);
   font-weight: 700;
-  font-size: 1.05rem;
-  letter-spacing: 0.01em;
+  font-size: 1.6rem;
+  margin: 0;
+  text-wrap: balance;
+}
+
+.name-gate-card .lede {
+  color: var(--text-muted);
+  margin: 0;
+}
+
+.name-gate-card input {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0.7rem 0.9rem;
+  color: var(--text);
+  font-size: 1rem;
+}
+
+.name-gate-card .primary {
+  background: var(--accent);
+  color: #06231c;
+  border: none;
+  border-radius: 8px;
+  padding: 0.85rem 1.25rem;
+  font-weight: 600;
+  font-size: 1rem;
+}
+
+.name-gate-card .primary:hover {
+  background: var(--accent-strong);
+}
+
+.name-gate-card .primary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 .room-code {

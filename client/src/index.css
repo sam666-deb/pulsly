@@ -77,3 +77,21 @@ button:focus-visible {
   color: var(--text);
   border-color: var(--accent);
 }
+
+.brand-lockup {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.55rem;
+}
+
+.brand-lockup svg {
+  flex: none;
+  border-radius: 30%;
+}
+
+.brand-word {
+  font-family: var(--font-display);
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  color: var(--text);
+}

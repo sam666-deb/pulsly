@@ -30,9 +30,12 @@ export interface Reaction {
 
 export type ConnectionQuality = "good" | "fair" | "poor";
 
-type DataChannelMessage = { kind: "chat"; text: string } | { kind: "reaction"; emoji: string };
+type DataChannelMessage =
+  | { kind: "chat"; text: string }
+  | { kind: "reaction"; emoji: string }
+  | { kind: "name"; name: string };
 
-export function useCall(room: string) {
+export function useCall(room: string, displayName: string) {
   const [status, setStatus] = useState<CallStatus>("requesting-media");
   const [localStream, setLocalStream] = useState<MediaStream | null>(null);
   const [remoteStream, setRemoteStream] = useState<MediaStream | null>(null);
@@ -43,6 +46,7 @@ export function useCall(room: string) {
   const [reactions, setReactions] = useState<Reaction[]>([]);
   const [quality, setQuality] = useState<ConnectionQuality | null>(null);
   const [connectedAt, setConnectedAt] = useState<number | null>(null);
+  const [peerName, setPeerName] = useState<string | null>(null);
 
   const wsRef = useRef<WebSocket | null>(null);
   const pcRef = useRef<RTCPeerConnection | null>(null);
@@ -56,6 +60,11 @@ export function useCall(room: string) {
   const localStreamRef = useRef<MediaStream | null>(null);
   const statsIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const reactionIdRef = useRef(0);
+  const displayNameRef = useRef(displayName);
+
+  useEffect(() => {
+    displayNameRef.current = displayName;
+  }, [displayName]);
 
   const send = useCallback((message: ClientMessage) => {
     wsRef.current?.send(JSON.stringify(message));
@@ -91,6 +100,13 @@ export function useCall(room: string) {
   const setupDataChannel = useCallback(
     (channel: RTCDataChannel) => {
       dataChannelRef.current = channel;
+
+      const announceName = () => {
+        channel.send(JSON.stringify({ kind: "name", name: displayNameRef.current }));
+      };
+      if (channel.readyState === "open") announceName();
+      else channel.onopen = announceName;
+
       channel.onmessage = (event) => {
         let msg: DataChannelMessage;
         try {
@@ -102,6 +118,8 @@ export function useCall(room: string) {
           setMessages((prev) => [...prev, { text: msg.text, self: false, ts: Date.now() }]);
         } else if (msg.kind === "reaction") {
           addReaction(msg.emoji, false);
+        } else if (msg.kind === "name") {
+          setPeerName(msg.name);
         }
       };
     },
@@ -279,6 +297,7 @@ export function useCall(room: string) {
           stopQualityPolling();
           setConnectedAt(null);
           setReactions([]);
+          setPeerName(null);
           screenStreamRef.current?.getTracks().forEach((t) => t.stop());
           screenStreamRef.current = null;
           setScreenStream(null);
@@ -394,6 +413,7 @@ export function useCall(room: string) {
     sendReaction,
     quality,
     connectedAt,
+    peerName,
     leave,
   };
 }

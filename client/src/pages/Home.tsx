@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useTheme } from "../hooks/useTheme";
 import { SunIcon, MoonIcon } from "../components/icons";
+import { Brand } from "../components/Logo";
 import "./Home.css";
 
 function newRoomId(): string {
@@ -23,7 +24,7 @@ export function Home({ onCreateRoom }: { onCreateRoom: (roomId: string) => void 
       </button>
 
       <div className="home-card">
-        <span className="eyebrow">Pulsly</span>
+        <Brand size={34} />
         <h1>Video calls, straight from the browser.</h1>
         <p className="lede">No account, no download. Start a call and send the link.</p>
 

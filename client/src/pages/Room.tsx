@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { useCall } from "../hooks/useCall";
 import { useTheme } from "../hooks/useTheme";
+import { useDisplayName } from "../hooks/useDisplayName";
 import {
   MicIcon,
   CameraIcon,
@@ -11,6 +12,7 @@ import {
   SunIcon,
   MoonIcon,
 } from "../components/icons";
+import { Brand } from "../components/Logo";
 import "./Room.css";
 
 const REACTION_EMOJI = ["👍", "❤️", "😂", "🎉", "👏"];
@@ -35,6 +37,37 @@ function VideoTile({
       <video ref={ref} autoPlay playsInline muted={muted} />
       <span className="video-label">{label}</span>
     </div>
+  );
+}
+
+function NamePrompt({ onSubmit }: { onSubmit: (name: string) => void }) {
+  const [value, setValue] = useState("");
+
+  return (
+    <main className="name-gate">
+      <form
+        className="name-gate-card"
+        onSubmit={(e) => {
+          e.preventDefault();
+          onSubmit(value);
+        }}
+      >
+        <Brand size={30} />
+        <h1>What should we call you?</h1>
+        <p className="lede">Shown to the other person on the call.</p>
+        <input
+          value={value}
+          onChange={(e) => setValue(e.target.value)}
+          placeholder="Your name"
+          aria-label="Your name"
+          autoFocus
+          maxLength={30}
+        />
+        <button type="submit" className="primary" disabled={!value.trim()}>
+          Join call
+        </button>
+      </form>
+    </main>
   );
 }
 
@@ -64,7 +97,15 @@ function formatElapsed(ms: number): string {
   return h > 0 ? `${h}:${pad(m)}:${pad(s)}` : `${pad(m)}:${pad(s)}`;
 }
 
-export function Room({ roomId, onLeave }: { roomId: string; onLeave: () => void }) {
+function CallRoom({
+  roomId,
+  onLeave,
+  displayName,
+}: {
+  roomId: string;
+  onLeave: () => void;
+  displayName: string;
+}) {
   const {
     status,
     localStream,
@@ -81,8 +122,9 @@ export function Room({ roomId, onLeave }: { roomId: string; onLeave: () => void 
     sendReaction,
     quality,
     connectedAt,
+    peerName,
     leave,
-  } = useCall(roomId);
+  } = useCall(roomId, displayName);
   const { theme, toggleTheme } = useTheme();
   const [copied, setCopied] = useState(false);
   const [chatOpen, setChatOpen] = useState(false);
@@ -142,7 +184,7 @@ export function Room({ roomId, onLeave }: { roomId: string; onLeave: () => void 
   return (
     <main className="room">
       <header className="room-bar">
-        <span className="brand">Pulsly</span>
+        <Brand size={22} />
         <div className="room-bar-right">
           {elapsed && (
             <span className="call-timer">
@@ -173,8 +215,8 @@ export function Room({ roomId, onLeave }: { roomId: string; onLeave: () => void 
 
       <div className="room-main">
         <div className="video-grid">
-          <VideoTile stream={screenStream ?? localStream} muted label="You" />
-          {remoteStream && <VideoTile stream={remoteStream} muted={false} label="Them" />}
+          <VideoTile stream={screenStream ?? localStream} muted label={displayName} />
+          {remoteStream && <VideoTile stream={remoteStream} muted={false} label={peerName ?? "Them"} />}
 
           <div className="reaction-layer" aria-hidden="true">
             {reactions.map((r) => (
@@ -294,4 +336,11 @@ export function Room({ roomId, onLeave }: { roomId: string; onLeave: () => void 
       )}
     </main>
   );
+}
+
+export function Room({ roomId, onLeave }: { roomId: string; onLeave: () => void }) {
+  const { name, setName } = useDisplayName();
+
+  if (!name) return <NamePrompt onSubmit={setName} />;
+  return <CallRoom roomId={roomId} onLeave={onLeave} displayName={name} />;
 }
