@@ -153,8 +153,20 @@
   width: 100%;
   max-width: 1000px;
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  grid-template-columns: repeat(var(--video-cols, 1), 1fr);
   gap: 0.75rem;
+}
+
+@media (max-width: 640px) {
+  .video-grid {
+    gap: 0.5rem;
+  }
+
+  /* 16:9 tiles in a 2-column mobile grid become tiny letterbox strips —
+     closer-to-square reads much better at this size. */
+  .video-tile {
+    aspect-ratio: 1;
+  }
 }
 
 .reaction-layer {

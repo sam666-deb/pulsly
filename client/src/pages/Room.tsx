@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type CSSProperties, type FormEvent } from "react";
 import { useCall } from "../hooks/useCall";
 import { useTheme } from "../hooks/useTheme";
 import { useDisplayName } from "../hooks/useDisplayName";
@@ -135,6 +135,8 @@ function CallRoom({
   const shareLink = `${window.location.origin}/room/${roomId}`;
   const unread = chatOpen ? 0 : messages.length - seenCountRef.current;
   const elapsed = connectedAt ? formatElapsed(now - connectedAt) : null;
+  const tileCount = peers.length + 1;
+  const videoGridColumns = Math.max(1, Math.ceil(Math.sqrt(tileCount)));
 
   useEffect(() => {
     if (chatOpen) seenCountRef.current = messages.length;
@@ -212,7 +214,7 @@ function CallRoom({
       </header>
 
       <div className="room-main">
-        <div className="video-grid">
+        <div className="video-grid" style={{ "--video-cols": videoGridColumns } as CSSProperties}>
           <VideoTile stream={screenStream ?? localStream} muted label={displayName} />
           {peers.map((peer) => (
             <VideoTile key={peer.id} stream={peer.stream} muted={false} label={peer.name ?? "Guest"} />
