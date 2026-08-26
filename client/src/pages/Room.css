@@ -156,16 +156,12 @@
   width: 100%;
   max-width: 1000px;
   margin: 0 auto;
-  display: grid;
-  grid-template-columns: repeat(var(--video-cols, 1), 1fr);
-  grid-template-rows: repeat(var(--video-rows, 1), 1fr);
-  gap: 0.75rem;
-}
-
-@media (max-width: 640px) {
-  .video-grid {
-    gap: 0.5rem;
-  }
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-content: center;
+  align-items: center;
+  gap: 12px; /* keep in sync with GRID_GAP in Room.tsx */
 }
 
 .reaction-layer {
@@ -216,11 +212,11 @@
 
 .video-tile {
   position: relative;
+  flex: none;
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 12px;
   overflow: hidden;
-  min-height: 0;
 }
 
 .video-tile video {

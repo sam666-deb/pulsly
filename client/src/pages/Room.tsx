@@ -1,7 +1,8 @@
-import { useEffect, useRef, useState, type CSSProperties, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import { useCall } from "../hooks/useCall";
 import { useTheme } from "../hooks/useTheme";
 import { useDisplayName } from "../hooks/useDisplayName";
+import { useElementSize } from "../hooks/useElementSize";
 import {
   MicIcon,
   CameraIcon,
@@ -16,15 +17,20 @@ import { Brand } from "../components/Logo";
 import "./Room.css";
 
 const REACTION_EMOJI = ["👍", "❤️", "😂", "🎉", "👏"];
+const GRID_GAP = 12; // px — keep in sync with .video-grid's `gap` in Room.css
 
 function VideoTile({
   stream,
   muted,
   label,
+  width,
+  height,
 }: {
   stream: MediaStream | null;
   muted: boolean;
   label: string;
+  width: number;
+  height: number;
 }) {
   const ref = useRef<HTMLVideoElement>(null);
 
@@ -33,11 +39,33 @@ function VideoTile({
   }, [stream]);
 
   return (
-    <div className="video-tile">
+    <div className="video-tile" style={{ width, height }}>
       <video ref={ref} autoPlay playsInline muted={muted} />
       <span className="video-label">{label}</span>
     </div>
   );
+}
+
+// Largest tile size (at the given aspect ratio) that still lets `cols` of
+// them fit per row and `rows` of them fit per column within the measured
+// container — the same "fit N boxes into a space" math real conferencing
+// UIs use, rather than letting tiles stretch to whatever shape the
+// container happens to be on a given device.
+function computeTileSize(
+  containerWidth: number,
+  containerHeight: number,
+  cols: number,
+  rows: number,
+): { width: number; height: number } {
+  const fallback = { width: 280, height: 210 };
+  if (containerWidth <= 0 || containerHeight <= 0) return fallback;
+
+  const aspect = containerWidth >= containerHeight ? 16 / 9 : 3 / 4;
+  const maxWidthFromWidth = (containerWidth - (cols - 1) * GRID_GAP) / cols;
+  const maxHeightFromHeight = (containerHeight - (rows - 1) * GRID_GAP) / rows;
+  const maxWidthFromHeight = maxHeightFromHeight * aspect;
+  const width = Math.max(0, Math.min(maxWidthFromWidth, maxWidthFromHeight));
+  return { width, height: width / aspect };
 }
 
 function NamePrompt({ onSubmit }: { onSubmit: (name: string) => void }) {
@@ -132,12 +160,15 @@ function CallRoom({
   const seenCountRef = useRef(0);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
+  const [gridRef, gridSize] = useElementSize<HTMLDivElement>();
+
   const shareLink = `${window.location.origin}/room/${roomId}`;
   const unread = chatOpen ? 0 : messages.length - seenCountRef.current;
   const elapsed = connectedAt ? formatElapsed(now - connectedAt) : null;
   const tileCount = peers.length + 1;
   const videoGridColumns = Math.max(1, Math.ceil(Math.sqrt(tileCount)));
   const videoGridRows = Math.max(1, Math.ceil(tileCount / videoGridColumns));
+  const tileSize = computeTileSize(gridSize.width, gridSize.height, videoGridColumns, videoGridRows);
 
   useEffect(() => {
     if (chatOpen) seenCountRef.current = messages.length;
@@ -215,13 +246,23 @@ function CallRoom({
       </header>
 
       <div className="room-main">
-        <div
-          className="video-grid"
-          style={{ "--video-cols": videoGridColumns, "--video-rows": videoGridRows } as CSSProperties}
-        >
-          <VideoTile stream={screenStream ?? localStream} muted label={displayName} />
+        <div className="video-grid" ref={gridRef}>
+          <VideoTile
+            stream={screenStream ?? localStream}
+            muted
+            label={displayName}
+            width={tileSize.width}
+            height={tileSize.height}
+          />
           {peers.map((peer) => (
-            <VideoTile key={peer.id} stream={peer.stream} muted={false} label={peer.name ?? "Guest"} />
+            <VideoTile
+              key={peer.id}
+              stream={peer.stream}
+              muted={false}
+              label={peer.name ?? "Guest"}
+              width={tileSize.width}
+              height={tileSize.height}
+            />
           ))}
 
           <div className="reaction-layer" aria-hidden="true">
