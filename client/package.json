@@ -4,6 +4,9 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
+    "types": "wrangler types",
+    "predev": "wrangler types",
+    "prebuild": "wrangler types",
     "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "oxlint",
