@@ -34,6 +34,7 @@ export interface RemotePeer {
   id: string;
   name: string | null;
   stream: MediaStream;
+  screenStream: MediaStream | null;
   quality: ConnectionQuality | null;
 }
 
@@ -70,6 +71,7 @@ export function useCall(room: string, displayName: string) {
   const dataChannelsRef = useRef<Map<string, RTCDataChannel>>(new Map());
   const pendingCandidatesRef = useRef<Map<string, RTCIceCandidateInit[]>>(new Map());
   const statsIntervalsRef = useRef<Map<string, ReturnType<typeof setInterval>>>(new Map());
+  const screenSendersRef = useRef<Map<string, RTCRtpSender>>(new Map());
 
   useEffect(() => {
     displayNameRef.current = displayName;
@@ -82,6 +84,20 @@ export function useCall(room: string, displayName: string) {
   const send = useCallback((message: ClientMessage) => {
     wsRef.current?.send(JSON.stringify(message));
   }, []);
+
+  // Re-offer an existing connection after its tracks change (e.g. a screen
+  // share track added or removed) — adding/removing tracks needs a fresh
+  // offer/answer round, unlike replaceTrack which doesn't.
+  const renegotiate = useCallback(
+    async (peerId: string) => {
+      const pc = pcsRef.current.get(peerId);
+      if (!pc) return;
+      const offer = await pc.createOffer();
+      await pc.setLocalDescription(offer);
+      send({ type: "signal", to: peerId, data: { kind: "offer", sdp: offer.sdp! } });
+    },
+    [send],
+  );
 
   const recomputeStatus = useCallback(() => {
     if (peersRef.current.size === 0) {
@@ -116,6 +132,7 @@ export function useCall(room: string, displayName: string) {
       pcsRef.current.delete(peerId);
       dataChannelsRef.current.delete(peerId);
       pendingCandidatesRef.current.delete(peerId);
+      screenSendersRef.current.delete(peerId);
       stopQualityPollingFor(peerId);
       peersRef.current.delete(peerId);
       syncPeers();
@@ -132,6 +149,7 @@ export function useCall(room: string, displayName: string) {
     }
     screenStreamRef.current?.getTracks().forEach((t) => t.stop());
     screenStreamRef.current = null;
+    screenSendersRef.current.clear();
     dataChannelsRef.current.clear();
     for (const pc of pcsRef.current.values()) pc.close();
     pcsRef.current.clear();
@@ -228,12 +246,41 @@ export function useCall(room: string, displayName: string) {
         pc.addTrack(track, stream);
       }
 
+      // Someone joining mid-screen-share needs that track added too, not
+      // just the camera — otherwise they'd only ever see everyone else's
+      // cameras and never the thing being presented.
+      if (screenStreamRef.current) {
+        const screenTrack = screenStreamRef.current.getVideoTracks()[0];
+        if (screenTrack) {
+          screenSendersRef.current.set(peerId, pc.addTrack(screenTrack, screenStreamRef.current));
+        }
+      }
+
       pc.ondatachannel = (event) => setupDataChannelFor(peerId, event.channel);
 
       pc.ontrack = (event) => {
         const peer = peersRef.current.get(peerId);
         if (!peer) return;
-        peer.stream.addTrack(event.track);
+
+        // Camera audio+video arrive once, at connection setup. A screen
+        // share track shows up later via renegotiation — recognizable as a
+        // second video track for the same peer, since a peer only ever
+        // has one camera video track.
+        const isScreenShare = event.track.kind === "video" && peer.stream.getVideoTracks().length > 0;
+
+        if (isScreenShare) {
+          if (!peer.screenStream) peer.screenStream = new MediaStream();
+          peer.screenStream.addTrack(event.track);
+          event.track.onended = () => {
+            const current = peersRef.current.get(peerId);
+            if (!current?.screenStream) return;
+            current.screenStream.removeTrack(event.track);
+            if (current.screenStream.getTracks().length === 0) current.screenStream = null;
+            syncPeers();
+          };
+        } else {
+          peer.stream.addTrack(event.track);
+        }
         syncPeers();
       };
 
@@ -264,7 +311,13 @@ export function useCall(room: string, displayName: string) {
 
   const addPeer = useCallback(
     (peerId: string) => {
-      peersRef.current.set(peerId, { id: peerId, name: null, stream: new MediaStream(), quality: null });
+      peersRef.current.set(peerId, {
+        id: peerId,
+        name: null,
+        stream: new MediaStream(),
+        screenStream: null,
+        quality: null,
+      });
       syncPeers();
     },
     [syncPeers],
@@ -408,13 +461,15 @@ export function useCall(room: string, displayName: string) {
     screenStreamRef.current?.getTracks().forEach((t) => t.stop());
     screenStreamRef.current = null;
     setScreenStream(null);
-    const camTrack = localStreamRef.current?.getVideoTracks()[0] ?? null;
-    if (!camTrack) return;
-    for (const pc of pcsRef.current.values()) {
-      const sender = pc.getSenders().find((s) => s.track?.kind === "video");
-      sender?.replaceTrack(camTrack);
+
+    for (const [peerId, pc] of pcsRef.current) {
+      const sender = screenSendersRef.current.get(peerId);
+      if (!sender) continue;
+      pc.removeTrack(sender);
+      renegotiate(peerId);
     }
-  }, []);
+    screenSendersRef.current.clear();
+  }, [renegotiate]);
 
   const toggleScreenShare = useCallback(async () => {
     if (pcsRef.current.size === 0) return;
@@ -435,11 +490,12 @@ export function useCall(room: string, displayName: string) {
     setScreenStream(display);
     screenTrack.onended = stopScreenShare;
 
-    for (const pc of pcsRef.current.values()) {
-      const sender = pc.getSenders().find((s) => s.track?.kind === "video");
-      if (sender) await sender.replaceTrack(screenTrack);
+    for (const [peerId, pc] of pcsRef.current) {
+      const sender = pc.addTrack(screenTrack, display);
+      screenSendersRef.current.set(peerId, sender);
+      renegotiate(peerId);
     }
-  }, [stopScreenShare]);
+  }, [stopScreenShare, renegotiate]);
 
   const sendMessage = useCallback((text: string) => {
     const trimmed = text.trim();

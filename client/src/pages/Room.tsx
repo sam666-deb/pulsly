@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState, type FormEvent } from "react";
-import { useCall } from "../hooks/useCall";
+import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
+import { useCall, type Reaction } from "../hooks/useCall";
 import { useTheme } from "../hooks/useTheme";
 import { useDisplayName } from "../hooks/useDisplayName";
 import { useElementSize } from "../hooks/useElementSize";
@@ -12,6 +12,7 @@ import {
   SmileIcon,
   SunIcon,
   MoonIcon,
+  PinIcon,
 } from "../components/icons";
 import { Brand } from "../components/Logo";
 import "./Room.css";
@@ -25,12 +26,20 @@ function VideoTile({
   label,
   width,
   height,
+  presenting,
+  pinned,
+  onTogglePin,
+  small,
 }: {
   stream: MediaStream | null;
   muted: boolean;
   label: string;
-  width: number;
-  height: number;
+  width?: number;
+  height?: number;
+  presenting?: boolean;
+  pinned?: boolean;
+  onTogglePin?: () => void;
+  small?: boolean;
 }) {
   const ref = useRef<HTMLVideoElement>(null);
 
@@ -39,9 +48,23 @@ function VideoTile({
   }, [stream]);
 
   return (
-    <div className="video-tile" style={{ width, height }}>
+    <div
+      className={small ? "video-tile video-tile-small" : "video-tile"}
+      style={width !== undefined ? { width, height } : undefined}
+    >
       <video ref={ref} autoPlay playsInline muted={muted} />
+      {presenting && <span className="presenting-badge">Presenting</span>}
       <span className="video-label">{label}</span>
+      {onTogglePin && (
+        <button
+          className={pinned ? "pin-button active" : "pin-button"}
+          onClick={onTogglePin}
+          title={pinned ? "Unpin" : "Pin to spotlight"}
+          aria-label={pinned ? "Unpin" : "Pin to spotlight"}
+        >
+          <PinIcon />
+        </button>
+      )}
     </div>
   );
 }
@@ -74,6 +97,18 @@ function computeTileSize(
     return { width: naturalHeight * MAX_ASPECT, height: naturalHeight };
   }
   return { width: naturalWidth, height: naturalHeight };
+}
+
+function ReactionLayer({ reactions }: { reactions: Reaction[] }) {
+  return (
+    <div className="reaction-layer" aria-hidden="true">
+      {reactions.map((r) => (
+        <span key={r.id} className={r.self ? "floating-reaction self" : "floating-reaction"}>
+          {r.emoji}
+        </span>
+      ))}
+    </div>
+  );
 }
 
 function NamePrompt({ onSubmit }: { onSubmit: (name: string) => void }) {
@@ -165,18 +200,70 @@ function CallRoom({
   const [reactionPickerOpen, setReactionPickerOpen] = useState(false);
   const [draft, setDraft] = useState("");
   const [now, setNow] = useState(Date.now());
+  const [pinnedId, setPinnedId] = useState<string | null>(null);
   const seenCountRef = useRef(0);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const [gridRef, gridSize] = useElementSize<HTMLDivElement>();
+  const [spotlightRef, spotlightSize] = useElementSize<HTMLDivElement>();
 
   const shareLink = `${window.location.origin}/room/${roomId}`;
   const unread = chatOpen ? 0 : messages.length - seenCountRef.current;
   const elapsed = connectedAt ? formatElapsed(now - connectedAt) : null;
+
+  const isSelfPresenting = !!screenStream;
+  const presentingPeer = peers.find((p) => p.screenStream) ?? null;
+
+  // A manual pin always wins; otherwise whoever is presenting (if anyone)
+  // auto-takes the spotlight, exactly like Meet/Zoom.
+  let spotlight: { id: string; stream: MediaStream | null; label: string; presenting: boolean } | null = null;
+  if (pinnedId === "self") {
+    spotlight = { id: "self", stream: screenStream ?? localStream, label: displayName, presenting: isSelfPresenting };
+  } else if (pinnedId) {
+    const p = peers.find((pp) => pp.id === pinnedId);
+    if (p) {
+      spotlight = {
+        id: p.id,
+        stream: p.screenStream ?? p.stream,
+        label: p.name ?? "Guest",
+        presenting: !!p.screenStream,
+      };
+    }
+  }
+  if (!spotlight) {
+    if (isSelfPresenting) {
+      spotlight = { id: "self", stream: screenStream, label: displayName, presenting: true };
+    } else if (presentingPeer) {
+      spotlight = {
+        id: presentingPeer.id,
+        stream: presentingPeer.screenStream,
+        label: presentingPeer.name ?? "Guest",
+        presenting: true,
+      };
+    }
+  }
+
+  const thumbnails: { id: string; stream: MediaStream | null; label: string }[] = [];
+  if (spotlight) {
+    if (spotlight.id !== "self") thumbnails.push({ id: "self", stream: localStream, label: displayName });
+    for (const p of peers) {
+      if (p.id !== spotlight.id) thumbnails.push({ id: p.id, stream: p.stream, label: p.name ?? "Guest" });
+    }
+  }
+
   const tileCount = peers.length + 1;
   const videoGridColumns = Math.max(1, Math.ceil(Math.sqrt(tileCount)));
   const videoGridRows = Math.max(1, Math.ceil(tileCount / videoGridColumns));
   const tileSize = computeTileSize(gridSize.width, gridSize.height, videoGridColumns, videoGridRows);
+  const spotlightTileSize = computeTileSize(spotlightSize.width, spotlightSize.height, 1, 1);
+
+  // If the pinned person leaves the call, fall back to auto-spotlight/gallery
+  // instead of leaving the pin pointed at nobody.
+  useEffect(() => {
+    if (pinnedId && pinnedId !== "self" && !peers.some((p) => p.id === pinnedId)) {
+      setPinnedId(null);
+    }
+  }, [pinnedId, peers]);
 
   useEffect(() => {
     if (chatOpen) seenCountRef.current = messages.length;
@@ -221,6 +308,69 @@ function CallRoom({
     setDraft("");
   };
 
+  const togglePin = (id: string) => setPinnedId((prev) => (prev === id ? null : id));
+
+  let videoArea: ReactNode;
+  if (spotlight) {
+    videoArea = (
+      <div className="spotlight-layout">
+        <div className="spotlight-main" ref={spotlightRef}>
+          <VideoTile
+            stream={spotlight.stream}
+            muted={spotlight.id === "self"}
+            label={spotlight.label}
+            width={spotlightTileSize.width}
+            height={spotlightTileSize.height}
+            presenting={spotlight.presenting}
+            pinned={pinnedId === spotlight.id}
+            onTogglePin={() => togglePin(spotlight!.id)}
+          />
+          <ReactionLayer reactions={reactions} />
+        </div>
+        <div className="spotlight-thumbs">
+          {thumbnails.map((t) => (
+            <VideoTile
+              key={t.id}
+              stream={t.stream}
+              muted={t.id === "self"}
+              label={t.label}
+              small
+              pinned={false}
+              onTogglePin={() => togglePin(t.id)}
+            />
+          ))}
+        </div>
+      </div>
+    );
+  } else {
+    videoArea = (
+      <div className="video-grid" ref={gridRef}>
+        <VideoTile
+          stream={localStream}
+          muted
+          label={displayName}
+          width={tileSize.width}
+          height={tileSize.height}
+          pinned={false}
+          onTogglePin={() => togglePin("self")}
+        />
+        {peers.map((peer) => (
+          <VideoTile
+            key={peer.id}
+            stream={peer.stream}
+            muted={false}
+            label={peer.name ?? "Guest"}
+            width={tileSize.width}
+            height={tileSize.height}
+            pinned={false}
+            onTogglePin={() => togglePin(peer.id)}
+          />
+        ))}
+        <ReactionLayer reactions={reactions} />
+      </div>
+    );
+  }
+
   return (
     <main className="room">
       <header className="room-bar">
@@ -254,33 +404,7 @@ function CallRoom({
       </header>
 
       <div className="room-main">
-        <div className="video-grid" ref={gridRef}>
-          <VideoTile
-            stream={screenStream ?? localStream}
-            muted
-            label={displayName}
-            width={tileSize.width}
-            height={tileSize.height}
-          />
-          {peers.map((peer) => (
-            <VideoTile
-              key={peer.id}
-              stream={peer.stream}
-              muted={false}
-              label={peer.name ?? "Guest"}
-              width={tileSize.width}
-              height={tileSize.height}
-            />
-          ))}
-
-          <div className="reaction-layer" aria-hidden="true">
-            {reactions.map((r) => (
-              <span key={r.id} className={r.self ? "floating-reaction self" : "floating-reaction"}>
-                {r.emoji}
-              </span>
-            ))}
-          </div>
-        </div>
+        {videoArea}
 
         {STATUS_TEXT[status] && (
           <div className="status-banner">

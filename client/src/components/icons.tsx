@@ -92,6 +92,15 @@ export function SmileIcon() {
   );
 }
 
+export function PinIcon() {
+  return (
+    <svg {...base} width="16" height="16" aria-hidden="true">
+      <circle cx="12" cy="8" r="5" />
+      <line x1="12" y1="13" x2="12" y2="21" />
+    </svg>
+  );
+}
+
 export function MoonIcon() {
   return (
     <svg {...base} width="18" height="18" aria-hidden="true">

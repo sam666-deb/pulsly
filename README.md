@@ -16,7 +16,10 @@ Browser-based video calling. No accounts, no downloads — start a call, send th
 - Real NAT traversal via a self-hosted TURN relay, not just STUN (works across different
   networks — home wifi to cellular, corporate firewalls, the works)
 - In-call text chat and emoji reactions, both over the same WebRTC data channel
-- Screen sharing
+- Screen sharing — sent as its own video track alongside the camera (not a swap), so
+  everyone still sees your face in a thumbnail while your screen is the main view
+- Spotlight layout: whoever's presenting auto-fills the main view with everyone else as
+  thumbnails below; pin anyone (including yourself) to feature them instead
 - Live connection-quality indicator (good/fair/poor, from `RTCPeerConnection.getStats()`)
 - Call duration timer
 - Noise suppression, echo cancellation, and auto gain on the mic by default
@@ -155,8 +158,8 @@ TURN_SECRET=<must match coturn's static-auth-secret>
 ## Status
 
 Working and live: group calling (full mesh, up to 4 people), TURN relay, chat, reactions,
-screen share, connection quality, call timer, keyboard shortcuts, light/dark theme, display
-names, a real logo, rate limiting, permanent zero-cost hosting.
+screen share with spotlight/pin layout, connection quality, call timer, keyboard shortcuts,
+light/dark theme, display names, a real logo, rate limiting, permanent zero-cost hosting.
 
 Not yet built: recording, accounts.
 
