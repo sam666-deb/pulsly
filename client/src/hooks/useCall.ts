@@ -36,12 +36,14 @@ export interface RemotePeer {
   stream: MediaStream;
   screenStream: MediaStream | null;
   quality: ConnectionQuality | null;
+  recording: boolean;
 }
 
 type DataChannelMessage =
   | { kind: "chat"; text: string }
   | { kind: "reaction"; emoji: string }
-  | { kind: "name"; name: string };
+  | { kind: "name"; name: string }
+  | { kind: "recording"; recording: boolean };
 
 export function useCall(room: string, displayName: string) {
   const [status, setStatus] = useState<CallStatus>("requesting-media");
@@ -195,6 +197,12 @@ export function useCall(room: string, displayName: string) {
             peer.name = msg.name;
             syncPeers();
           }
+        } else if (msg.kind === "recording") {
+          const peer = peersRef.current.get(peerId);
+          if (peer) {
+            peer.recording = msg.recording;
+            syncPeers();
+          }
         }
       };
     },
@@ -317,6 +325,7 @@ export function useCall(room: string, displayName: string) {
         stream: new MediaStream(),
         screenStream: null,
         quality: null,
+        recording: false,
       });
       syncPeers();
     },
@@ -526,6 +535,16 @@ export function useCall(room: string, displayName: string) {
     [addReaction],
   );
 
+  // Broadcast that this device has started/stopped recording, so everyone
+  // else sees a disclosure — the same courtesy Zoom/Meet give participants.
+  const sendRecordingStatus = useCallback((recording: boolean) => {
+    for (const channel of dataChannelsRef.current.values()) {
+      if (channel.readyState === "open") {
+        channel.send(JSON.stringify({ kind: "recording", recording }));
+      }
+    }
+  }, []);
+
   const leave = useCallback(() => {
     localStream?.getTracks().forEach((t) => t.stop());
     teardown();
@@ -545,6 +564,7 @@ export function useCall(room: string, displayName: string) {
     sendMessage,
     reactions,
     sendReaction,
+    sendRecordingStatus,
     quality,
     connectedAt,
     leave,

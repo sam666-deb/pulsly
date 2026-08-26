@@ -133,6 +133,50 @@
   gap: 0.6rem;
 }
 
+.rec-badge {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  background: var(--surface-alt);
+  border: 1px solid var(--danger);
+  color: var(--danger);
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  padding: 0.3rem 0.6rem;
+  border-radius: 999px;
+  font-variant-numeric: tabular-nums;
+}
+
+.rec-badge-notice {
+  border-color: var(--border);
+  color: var(--text-muted);
+}
+
+.rec-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--danger);
+  animation: rec-pulse 1.4s ease-in-out infinite;
+}
+
+@keyframes rec-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
+
+.control.recording {
+  background: var(--danger);
+  border-color: var(--danger);
+  color: #1a0d0a;
+}
+
 .call-timer {
   display: flex;
   align-items: center;
@@ -324,6 +368,10 @@
   .floating-reaction {
     animation: none;
     opacity: 1;
+  }
+
+  .rec-dot {
+    animation: none;
   }
 }
 

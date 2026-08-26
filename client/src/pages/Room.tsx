@@ -3,6 +3,7 @@ import { useCall, type Reaction } from "../hooks/useCall";
 import { useTheme } from "../hooks/useTheme";
 import { useDisplayName } from "../hooks/useDisplayName";
 import { useElementSize } from "../hooks/useElementSize";
+import { useRecorder } from "../hooks/useRecorder";
 import {
   MicIcon,
   CameraIcon,
@@ -13,6 +14,7 @@ import {
   SunIcon,
   MoonIcon,
   PinIcon,
+  RecordIcon,
 } from "../components/icons";
 import { Brand } from "../components/Logo";
 import "./Room.css";
@@ -194,11 +196,19 @@ function CallRoom({
     sendMessage,
     reactions,
     sendReaction,
+    sendRecordingStatus,
     quality,
     connectedAt,
     leave,
   } = useCall(roomId, displayName);
   const { theme, toggleTheme } = useTheme();
+  const {
+    isRecording,
+    seconds: recordingSeconds,
+    supported: recordingSupported,
+    toggleRecording,
+  } = useRecorder({ localStream, screenStream, displayName, peers, onRecordingChange: sendRecordingStatus });
+  const someoneElseRecording = peers.some((p) => p.recording);
   const [copied, setCopied] = useState(false);
   const [chatOpen, setChatOpen] = useState(false);
   const [reactionPickerOpen, setReactionPickerOpen] = useState(false);
@@ -378,6 +388,18 @@ function CallRoom({
       <header className="room-bar">
         <Brand size={22} />
         <div className="room-bar-right">
+          {isRecording && (
+            <span className="rec-badge" title="Recording this call">
+              <span className="rec-dot" />
+              REC {formatElapsed(recordingSeconds * 1000)}
+            </span>
+          )}
+          {!isRecording && someoneElseRecording && (
+            <span className="rec-badge rec-badge-notice" title="Someone is recording this call">
+              <span className="rec-dot" />
+              Recording
+            </span>
+          )}
           {elapsed && (
             <span className="call-timer">
               {quality && (
@@ -442,6 +464,17 @@ function CallRoom({
           >
             <ScreenShareIcon />
           </button>
+
+          {recordingSupported && (
+            <button
+              className={isRecording ? "control recording" : "control"}
+              onClick={toggleRecording}
+              title={isRecording ? "Stop recording" : "Record this call"}
+              aria-label={isRecording ? "Stop recording" : "Record this call"}
+            >
+              <RecordIcon active={isRecording} />
+            </button>
+          )}
 
           <button
             className={reactionPickerOpen ? "control active" : "control"}

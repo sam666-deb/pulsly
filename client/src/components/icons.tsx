@@ -92,6 +92,18 @@ export function SmileIcon() {
   );
 }
 
+export function RecordIcon({ active }: { active?: boolean }) {
+  return (
+    <svg {...base} width="20" height="20" aria-hidden="true">
+      {active ? (
+        <rect x="6" y="6" width="12" height="12" rx="2" fill="currentColor" />
+      ) : (
+        <circle cx="12" cy="12" r="8" fill="currentColor" stroke="none" />
+      )}
+    </svg>
+  );
+}
+
 export function PinIcon() {
   return (
     <svg {...base} width="16" height="16" aria-hidden="true">

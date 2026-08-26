@@ -20,6 +20,10 @@ Browser-based video calling. No accounts, no downloads — start a call, send th
   everyone still sees your face in a thumbnail while your screen is the main view
 - Spotlight layout: whoever's presenting auto-fills the main view with everyone else as
   thumbnails below; pin anyone (including yourself) to feature them instead
+- Call recording — composites everyone's video onto a canvas and mixes everyone's audio via
+  Web Audio, entirely in the browser (no server involved, no storage cost), and saves a
+  `.webm`/`.mp4` file straight to your device when you stop. Broadcasts a disclosure to
+  everyone else in the call while it's running, the same courtesy Zoom/Meet give
 - Live connection-quality indicator (good/fair/poor, from `RTCPeerConnection.getStats()`)
 - Call duration timer
 - Noise suppression, echo cancellation, and auto gain on the mic by default
@@ -122,7 +126,8 @@ VITE_SIGNALING_URL=wss://pulsly.duckdns.org
 client/                 React + TypeScript frontend (Vite), deployed to Cloudflare Workers
   src/
     pages/               Home and Room — the two top-level views
-    hooks/               useCall (all WebRTC/signaling logic), useTheme, useDisplayName
+    hooks/               useCall (WebRTC/signaling), useRecorder (client-side call
+                         recording), useTheme, useDisplayName
     lib/                 ice-servers fetch, shared signaling message types
     components/          icons.tsx (hand-drawn SVG icon set), Logo.tsx (brand mark)
     App.tsx              route switch between Home and Room
@@ -158,8 +163,9 @@ TURN_SECRET=<must match coturn's static-auth-secret>
 ## Status
 
 Working and live: group calling (full mesh, up to 4 people), TURN relay, chat, reactions,
-screen share with spotlight/pin layout, connection quality, call timer, keyboard shortcuts,
-light/dark theme, display names, a real logo, rate limiting, permanent zero-cost hosting.
+screen share with spotlight/pin layout, client-side call recording, connection quality, call
+timer, keyboard shortcuts, light/dark theme, display names, a real logo, rate limiting,
+permanent zero-cost hosting.
 
 Not yet built: recording, accounts.
 
