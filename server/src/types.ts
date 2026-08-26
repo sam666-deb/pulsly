@@ -8,7 +8,7 @@ export type ClientMessage =
   | { type: "signal"; to: string; data: SignalData };
 
 export type ServerMessage =
-  | { type: "joined"; selfId: string; peerId: string | null }
+  | { type: "joined"; selfId: string; peerIds: string[] }
   | { type: "peer-joined"; peerId: string }
   | { type: "peer-left"; peerId: string }
   | { type: "signal"; from: string; data: SignalData }

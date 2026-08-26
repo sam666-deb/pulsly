@@ -75,9 +75,8 @@ const STATUS_TEXT: Record<string, string> = {
   "requesting-media": "Asking for camera and microphone access…",
   connecting: "Connecting…",
   "waiting-for-peer": "Waiting for someone to join — share the link above.",
-  negotiating: "Connecting to the other person…",
-  "peer-left": "The other person left the call.",
-  "room-full": "This room already has two people in it.",
+  negotiating: "Connecting…",
+  "room-full": "This room is full.",
   "media-denied": "Camera or microphone access was denied.",
   error: "Something went wrong with the connection.",
 };
@@ -109,7 +108,7 @@ function CallRoom({
   const {
     status,
     localStream,
-    remoteStream,
+    peers,
     micOn,
     cameraOn,
     toggleMic,
@@ -122,7 +121,6 @@ function CallRoom({
     sendReaction,
     quality,
     connectedAt,
-    peerName,
     leave,
   } = useCall(roomId, displayName);
   const { theme, toggleTheme } = useTheme();
@@ -216,7 +214,9 @@ function CallRoom({
       <div className="room-main">
         <div className="video-grid">
           <VideoTile stream={screenStream ?? localStream} muted label={displayName} />
-          {remoteStream && <VideoTile stream={remoteStream} muted={false} label={peerName ?? "Them"} />}
+          {peers.map((peer) => (
+            <VideoTile key={peer.id} stream={peer.stream} muted={false} label={peer.name ?? "Guest"} />
+          ))}
 
           <div className="reaction-layer" aria-hidden="true">
             {reactions.map((r) => (
@@ -316,6 +316,7 @@ function CallRoom({
             {messages.length === 0 && <p className="chat-empty">No messages yet.</p>}
             {messages.map((m, i) => (
               <div key={i} className={m.self ? "chat-msg self" : "chat-msg"}>
+                {!m.self && m.from && <span className="chat-msg-from">{m.from}</span>}
                 {m.text}
               </div>
             ))}

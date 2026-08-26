@@ -438,6 +438,14 @@
   color: #06231c;
 }
 
+.chat-msg-from {
+  display: block;
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--accent-strong);
+  margin-bottom: 0.15rem;
+}
+
 .chat-input-row {
   display: flex;
   gap: 0.5rem;

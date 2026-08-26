@@ -11,13 +11,13 @@ export type CallStatus =
   | "waiting-for-peer"
   | "negotiating"
   | "connected"
-  | "peer-left"
   | "room-full"
   | "media-denied"
   | "error";
 
 export interface ChatMessage {
   text: string;
+  from: string | null;
   self: boolean;
   ts: number;
 }
@@ -30,6 +30,13 @@ export interface Reaction {
 
 export type ConnectionQuality = "good" | "fair" | "poor";
 
+export interface RemotePeer {
+  id: string;
+  name: string | null;
+  stream: MediaStream;
+  quality: ConnectionQuality | null;
+}
+
 type DataChannelMessage =
   | { kind: "chat"; text: string }
   | { kind: "reaction"; emoji: string }
@@ -38,7 +45,6 @@ type DataChannelMessage =
 export function useCall(room: string, displayName: string) {
   const [status, setStatus] = useState<CallStatus>("requesting-media");
   const [localStream, setLocalStream] = useState<MediaStream | null>(null);
-  const [remoteStream, setRemoteStream] = useState<MediaStream | null>(null);
   const [micOn, setMicOn] = useState(true);
   const [cameraOn, setCameraOn] = useState(true);
   const [screenStream, setScreenStream] = useState<MediaStream | null>(null);
@@ -46,48 +52,94 @@ export function useCall(room: string, displayName: string) {
   const [reactions, setReactions] = useState<Reaction[]>([]);
   const [quality, setQuality] = useState<ConnectionQuality | null>(null);
   const [connectedAt, setConnectedAt] = useState<number | null>(null);
-  const [peerName, setPeerName] = useState<string | null>(null);
+  const [peers, setPeers] = useState<RemotePeer[]>([]);
 
   const wsRef = useRef<WebSocket | null>(null);
-  const pcRef = useRef<RTCPeerConnection | null>(null);
   const selfIdRef = useRef<string | null>(null);
-  const peerIdRef = useRef<string | null>(null);
-  const pendingCandidatesRef = useRef<RTCIceCandidateInit[]>([]);
-  const remoteStreamRef = useRef<MediaStream>(new MediaStream());
   const iceServersRef = useRef<RTCIceServer[]>([]);
-  const dataChannelRef = useRef<RTCDataChannel | null>(null);
   const screenStreamRef = useRef<MediaStream | null>(null);
   const localStreamRef = useRef<MediaStream | null>(null);
-  const statsIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const reactionIdRef = useRef(0);
   const displayNameRef = useRef(displayName);
+
+  // Authoritative per-peer state lives in refs (keyed by peer id) so mesh
+  // connections can be managed imperatively; `peers` (state) is a snapshot
+  // array derived from these for rendering.
+  const peersRef = useRef<Map<string, RemotePeer>>(new Map());
+  const pcsRef = useRef<Map<string, RTCPeerConnection>>(new Map());
+  const dataChannelsRef = useRef<Map<string, RTCDataChannel>>(new Map());
+  const pendingCandidatesRef = useRef<Map<string, RTCIceCandidateInit[]>>(new Map());
+  const statsIntervalsRef = useRef<Map<string, ReturnType<typeof setInterval>>>(new Map());
 
   useEffect(() => {
     displayNameRef.current = displayName;
   }, [displayName]);
 
+  const syncPeers = useCallback(() => {
+    setPeers(Array.from(peersRef.current.values()));
+  }, []);
+
   const send = useCallback((message: ClientMessage) => {
     wsRef.current?.send(JSON.stringify(message));
   }, []);
 
-  const stopQualityPolling = useCallback(() => {
-    if (statsIntervalRef.current) {
-      clearInterval(statsIntervalRef.current);
-      statsIntervalRef.current = null;
+  const recomputeStatus = useCallback(() => {
+    if (peersRef.current.size === 0) {
+      setStatus("waiting-for-peer");
+      return;
     }
-    setQuality(null);
+    const anyConnected = Array.from(pcsRef.current.values()).some(
+      (pc) => pc.connectionState === "connected",
+    );
+    setStatus(anyConnected ? "connected" : "negotiating");
   }, []);
 
+  const recomputeQuality = useCallback(() => {
+    const qualities = Array.from(peersRef.current.values())
+      .map((p) => p.quality)
+      .filter((q): q is ConnectionQuality => q !== null);
+    if (qualities.length === 0) setQuality(null);
+    else if (qualities.includes("poor")) setQuality("poor");
+    else if (qualities.includes("fair")) setQuality("fair");
+    else setQuality("good");
+  }, []);
+
+  const stopQualityPollingFor = useCallback((peerId: string) => {
+    const interval = statsIntervalsRef.current.get(peerId);
+    if (interval) clearInterval(interval);
+    statsIntervalsRef.current.delete(peerId);
+  }, []);
+
+  const removePeer = useCallback(
+    (peerId: string) => {
+      pcsRef.current.get(peerId)?.close();
+      pcsRef.current.delete(peerId);
+      dataChannelsRef.current.delete(peerId);
+      pendingCandidatesRef.current.delete(peerId);
+      stopQualityPollingFor(peerId);
+      peersRef.current.delete(peerId);
+      syncPeers();
+      recomputeQuality();
+      recomputeStatus();
+      if (peersRef.current.size === 0) setConnectedAt(null);
+    },
+    [stopQualityPollingFor, syncPeers, recomputeQuality, recomputeStatus],
+  );
+
   const teardown = useCallback(() => {
-    stopQualityPolling();
+    for (const peerId of Array.from(statsIntervalsRef.current.keys())) {
+      stopQualityPollingFor(peerId);
+    }
     screenStreamRef.current?.getTracks().forEach((t) => t.stop());
     screenStreamRef.current = null;
-    dataChannelRef.current = null;
-    pcRef.current?.close();
-    pcRef.current = null;
+    dataChannelsRef.current.clear();
+    for (const pc of pcsRef.current.values()) pc.close();
+    pcsRef.current.clear();
+    pendingCandidatesRef.current.clear();
+    peersRef.current.clear();
     wsRef.current?.close();
     wsRef.current = null;
-  }, [stopQualityPolling]);
+  }, [stopQualityPollingFor]);
 
   const addReaction = useCallback((emoji: string, self: boolean) => {
     const id = ++reactionIdRef.current;
@@ -97,9 +149,9 @@ export function useCall(room: string, displayName: string) {
     }, 2500);
   }, []);
 
-  const setupDataChannel = useCallback(
-    (channel: RTCDataChannel) => {
-      dataChannelRef.current = channel;
+  const setupDataChannelFor = useCallback(
+    (peerId: string, channel: RTCDataChannel) => {
+      dataChannelsRef.current.set(peerId, channel);
 
       const announceName = () => {
         channel.send(JSON.stringify({ kind: "name", name: displayNameRef.current }));
@@ -115,57 +167,74 @@ export function useCall(room: string, displayName: string) {
           return;
         }
         if (msg.kind === "chat") {
-          setMessages((prev) => [...prev, { text: msg.text, self: false, ts: Date.now() }]);
+          const from = peersRef.current.get(peerId)?.name ?? null;
+          setMessages((prev) => [...prev, { text: msg.text, from, self: false, ts: Date.now() }]);
         } else if (msg.kind === "reaction") {
           addReaction(msg.emoji, false);
         } else if (msg.kind === "name") {
-          setPeerName(msg.name);
+          const peer = peersRef.current.get(peerId);
+          if (peer) {
+            peer.name = msg.name;
+            syncPeers();
+          }
         }
       };
     },
-    [addReaction],
+    [addReaction, syncPeers],
   );
 
-  const startQualityPolling = useCallback((pc: RTCPeerConnection) => {
-    if (statsIntervalRef.current) clearInterval(statsIntervalRef.current);
-    statsIntervalRef.current = setInterval(async () => {
-      let rtt = 0;
-      let packetsLost = 0;
-      let packetsReceived = 0;
-      const stats = await pc.getStats();
-      stats.forEach((report) => {
-        if (report.type === "candidate-pair" && report.state === "succeeded" && report.nominated) {
-          rtt = report.currentRoundTripTime ?? 0;
+  const startQualityPollingFor = useCallback(
+    (peerId: string, pc: RTCPeerConnection) => {
+      stopQualityPollingFor(peerId);
+      const interval = setInterval(async () => {
+        let rtt = 0;
+        let packetsLost = 0;
+        let packetsReceived = 0;
+        const stats = await pc.getStats();
+        stats.forEach((report) => {
+          if (report.type === "candidate-pair" && report.state === "succeeded" && report.nominated) {
+            rtt = report.currentRoundTripTime ?? 0;
+          }
+          if (report.type === "inbound-rtp" && report.kind === "video") {
+            packetsLost = report.packetsLost ?? 0;
+            packetsReceived = report.packetsReceived ?? 0;
+          }
+        });
+        const total = packetsLost + packetsReceived;
+        const lossRatio = total > 0 ? packetsLost / total : 0;
+        let next: ConnectionQuality;
+        if (rtt < 0.15 && lossRatio < 0.02) next = "good";
+        else if (rtt < 0.3 && lossRatio < 0.05) next = "fair";
+        else next = "poor";
+        const peer = peersRef.current.get(peerId);
+        if (peer) {
+          peer.quality = next;
+          syncPeers();
         }
-        if (report.type === "inbound-rtp" && report.kind === "video") {
-          packetsLost = report.packetsLost ?? 0;
-          packetsReceived = report.packetsReceived ?? 0;
-        }
-      });
-      const total = packetsLost + packetsReceived;
-      const lossRatio = total > 0 ? packetsLost / total : 0;
-      let next: ConnectionQuality;
-      if (rtt < 0.15 && lossRatio < 0.02) next = "good";
-      else if (rtt < 0.3 && lossRatio < 0.05) next = "fair";
-      else next = "poor";
-      setQuality(next);
-    }, 3000);
-  }, []);
+        recomputeQuality();
+      }, 3000);
+      statsIntervalsRef.current.set(peerId, interval);
+    },
+    [stopQualityPollingFor, syncPeers, recomputeQuality],
+  );
 
-  const createPeerConnection = useCallback(
+  const createPeerConnectionFor = useCallback(
     (stream: MediaStream, peerId: string) => {
       const pc = new RTCPeerConnection({ iceServers: iceServersRef.current });
-      pcRef.current = pc;
+      pcsRef.current.set(peerId, pc);
+      pendingCandidatesRef.current.set(peerId, []);
 
       for (const track of stream.getTracks()) {
         pc.addTrack(track, stream);
       }
 
-      pc.ondatachannel = (event) => setupDataChannel(event.channel);
+      pc.ondatachannel = (event) => setupDataChannelFor(peerId, event.channel);
 
       pc.ontrack = (event) => {
-        remoteStreamRef.current.addTrack(event.track);
-        setRemoteStream(remoteStreamRef.current);
+        const peer = peersRef.current.get(peerId);
+        if (!peer) return;
+        peer.stream.addTrack(event.track);
+        syncPeers();
       };
 
       pc.onicecandidate = (event) => {
@@ -180,45 +249,54 @@ export function useCall(room: string, displayName: string) {
 
       pc.onconnectionstatechange = () => {
         if (pc.connectionState === "connected") {
-          setStatus("connected");
           setConnectedAt((prev) => prev ?? Date.now());
-          startQualityPolling(pc);
+          startQualityPollingFor(peerId, pc);
+          recomputeStatus();
+        } else if (pc.connectionState === "failed" || pc.connectionState === "closed") {
+          removePeer(peerId);
         }
-        if (pc.connectionState === "failed") setStatus("error");
       };
 
       return pc;
     },
-    [send, setupDataChannel, startQualityPolling],
+    [send, setupDataChannelFor, syncPeers, startQualityPollingFor, recomputeStatus, removePeer],
+  );
+
+  const addPeer = useCallback(
+    (peerId: string) => {
+      peersRef.current.set(peerId, { id: peerId, name: null, stream: new MediaStream(), quality: null });
+      syncPeers();
+    },
+    [syncPeers],
   );
 
   const handleSignal = useCallback(
     async (from: string, data: SignalData) => {
-      const pc = pcRef.current;
+      const pc = pcsRef.current.get(from);
       if (!pc) return;
+      const pending = pendingCandidatesRef.current.get(from) ?? [];
 
       if (data.kind === "offer") {
-        setStatus("negotiating");
         await pc.setRemoteDescription({ type: "offer", sdp: data.sdp });
-        for (const candidate of pendingCandidatesRef.current) {
+        for (const candidate of pending) {
           await pc.addIceCandidate(candidate);
         }
-        pendingCandidatesRef.current = [];
+        pendingCandidatesRef.current.set(from, []);
         const answer = await pc.createAnswer();
         await pc.setLocalDescription(answer);
         send({ type: "signal", to: from, data: { kind: "answer", sdp: answer.sdp! } });
       } else if (data.kind === "answer") {
-        setStatus("negotiating");
         await pc.setRemoteDescription({ type: "answer", sdp: data.sdp });
-        for (const candidate of pendingCandidatesRef.current) {
+        for (const candidate of pending) {
           await pc.addIceCandidate(candidate);
         }
-        pendingCandidatesRef.current = [];
+        pendingCandidatesRef.current.set(from, []);
       } else if (data.kind === "ice-candidate") {
         if (pc.remoteDescription) {
           await pc.addIceCandidate(data.candidate);
         } else {
-          pendingCandidatesRef.current.push(data.candidate);
+          pending.push(data.candidate);
+          pendingCandidatesRef.current.set(from, pending);
         }
       }
     },
@@ -267,20 +345,17 @@ export function useCall(room: string, displayName: string) {
 
         if (msg.type === "joined") {
           selfIdRef.current = msg.selfId;
-          if (msg.peerId) {
-            // Someone was already here — wait for their offer, don't initiate.
-            peerIdRef.current = msg.peerId;
-            setStatus("negotiating");
-            createPeerConnection(stream!, msg.peerId);
-          } else {
-            setStatus("waiting-for-peer");
+          // Existing peers will initiate offers to us — just wait.
+          for (const peerId of msg.peerIds) {
+            addPeer(peerId);
+            createPeerConnectionFor(stream!, peerId);
           }
+          setStatus(msg.peerIds.length === 0 ? "waiting-for-peer" : "negotiating");
         } else if (msg.type === "peer-joined") {
           // We were already here — we initiate the offer, and own the data channel.
-          peerIdRef.current = msg.peerId;
-          setStatus("negotiating");
-          const pc = createPeerConnection(stream!, msg.peerId);
-          setupDataChannel(pc.createDataChannel("chat"));
+          addPeer(msg.peerId);
+          const pc = createPeerConnectionFor(stream!, msg.peerId);
+          setupDataChannelFor(msg.peerId, pc.createDataChannel("chat"));
           pc.createOffer()
             .then((offer) => pc.setLocalDescription(offer).then(() => offer))
             .then((offer) => {
@@ -290,24 +365,11 @@ export function useCall(room: string, displayName: string) {
                 data: { kind: "offer", sdp: offer.sdp! },
               });
             });
+          recomputeStatus();
         } else if (msg.type === "signal") {
           handleSignal(msg.from, msg.data);
         } else if (msg.type === "peer-left") {
-          setStatus("peer-left");
-          stopQualityPolling();
-          setConnectedAt(null);
-          setReactions([]);
-          setPeerName(null);
-          screenStreamRef.current?.getTracks().forEach((t) => t.stop());
-          screenStreamRef.current = null;
-          setScreenStream(null);
-          dataChannelRef.current = null;
-          setMessages([]);
-          pcRef.current?.close();
-          pcRef.current = null;
-          remoteStreamRef.current = new MediaStream();
-          setRemoteStream(null);
-          peerIdRef.current = null;
+          removePeer(msg.peerId);
         } else if (msg.type === "room-full") {
           setStatus("room-full");
         } else if (msg.type === "error") {
@@ -343,17 +405,19 @@ export function useCall(room: string, displayName: string) {
   }, [localStream, cameraOn]);
 
   const stopScreenShare = useCallback(() => {
-    const sender = pcRef.current?.getSenders().find((s) => s.track?.kind === "video");
     screenStreamRef.current?.getTracks().forEach((t) => t.stop());
     screenStreamRef.current = null;
     setScreenStream(null);
     const camTrack = localStreamRef.current?.getVideoTracks()[0] ?? null;
-    if (sender && camTrack) sender.replaceTrack(camTrack);
+    if (!camTrack) return;
+    for (const pc of pcsRef.current.values()) {
+      const sender = pc.getSenders().find((s) => s.track?.kind === "video");
+      sender?.replaceTrack(camTrack);
+    }
   }, []);
 
   const toggleScreenShare = useCallback(async () => {
-    const pc = pcRef.current;
-    if (!pc) return;
+    if (pcsRef.current.size === 0) return;
 
     if (screenStreamRef.current) {
       stopScreenShare();
@@ -371,23 +435,37 @@ export function useCall(room: string, displayName: string) {
     setScreenStream(display);
     screenTrack.onended = stopScreenShare;
 
-    const sender = pc.getSenders().find((s) => s.track?.kind === "video");
-    if (sender) await sender.replaceTrack(screenTrack);
+    for (const pc of pcsRef.current.values()) {
+      const sender = pc.getSenders().find((s) => s.track?.kind === "video");
+      if (sender) await sender.replaceTrack(screenTrack);
+    }
   }, [stopScreenShare]);
 
   const sendMessage = useCallback((text: string) => {
-    const channel = dataChannelRef.current;
-    if (!channel || channel.readyState !== "open" || !text.trim()) return;
-    channel.send(JSON.stringify({ kind: "chat", text }));
-    setMessages((prev) => [...prev, { text, self: true, ts: Date.now() }]);
+    const trimmed = text.trim();
+    if (!trimmed) return;
+    let sentToAny = false;
+    for (const channel of dataChannelsRef.current.values()) {
+      if (channel.readyState === "open") {
+        channel.send(JSON.stringify({ kind: "chat", text: trimmed }));
+        sentToAny = true;
+      }
+    }
+    if (sentToAny) {
+      setMessages((prev) => [...prev, { text: trimmed, from: displayNameRef.current, self: true, ts: Date.now() }]);
+    }
   }, []);
 
   const sendReaction = useCallback(
     (emoji: string) => {
-      const channel = dataChannelRef.current;
-      if (!channel || channel.readyState !== "open") return;
-      channel.send(JSON.stringify({ kind: "reaction", emoji }));
-      addReaction(emoji, true);
+      let sentToAny = false;
+      for (const channel of dataChannelsRef.current.values()) {
+        if (channel.readyState === "open") {
+          channel.send(JSON.stringify({ kind: "reaction", emoji }));
+          sentToAny = true;
+        }
+      }
+      if (sentToAny) addReaction(emoji, true);
     },
     [addReaction],
   );
@@ -400,7 +478,7 @@ export function useCall(room: string, displayName: string) {
   return {
     status,
     localStream,
-    remoteStream,
+    peers,
     micOn,
     cameraOn,
     toggleMic,
@@ -413,7 +491,6 @@ export function useCall(room: string, displayName: string) {
     sendReaction,
     quality,
     connectedAt,
-    peerName,
     leave,
   };
 }

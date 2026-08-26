@@ -11,7 +11,7 @@ Browser-based video calling. No accounts, no downloads — start a call, send th
 
 ## What it does
 
-- 1:1 video calls over a shared room link — no sign-up, no install
+- Video calls over a shared room link, up to 4 people — no sign-up, no install
 - Real display names — set once, shown on both tiles instead of generic "You"/"Them"
 - Real NAT traversal via a self-hosted TURN relay, not just STUN (works across different
   networks — home wifi to cellular, corporate firewalls, the works)
@@ -26,11 +26,13 @@ Browser-based video calling. No accounts, no downloads — start a call, send th
 
 ## How it works
 
-The two browsers negotiate a direct WebRTC connection. The signaling server only ever
-relays the *negotiation* — offers, answers, ICE candidates — as small JSON messages over a
-WebSocket. It never touches audio or video. Once negotiation succeeds, media flows straight
-between the two browsers, falling back to a TURN relay only when a direct path is blocked
-(roughly 1 in 5 real-world connections, more on restrictive networks).
+Every pair of browsers in a room negotiates its own direct WebRTC connection (full mesh —
+with 4 people, that's 6 pairwise connections). The signaling server only ever relays the
+*negotiation* for each pair — offers, answers, ICE candidates — as small JSON messages over
+a WebSocket. It never touches audio or video. Once negotiation succeeds, media flows
+straight between the two browsers, falling back to a TURN relay only when a direct path is
+blocked (roughly 1 in 5 real-world connections, more on restrictive networks). The diagram
+below shows one pair — every other pair in the room does the same exchange independently.
 
 ```mermaid
 sequenceDiagram
@@ -152,11 +154,11 @@ TURN_SECRET=<must match coturn's static-auth-secret>
 
 ## Status
 
-Working and live: 1:1 calling, TURN relay, chat, reactions, screen share, connection quality,
-call timer, keyboard shortcuts, light/dark theme, display names, a real logo, rate limiting,
-permanent zero-cost hosting.
+Working and live: group calling (full mesh, up to 4 people), TURN relay, chat, reactions,
+screen share, connection quality, call timer, keyboard shortcuts, light/dark theme, display
+names, a real logo, rate limiting, permanent zero-cost hosting.
 
-Not yet built: group calls (3+ people, would need a mesh or SFU), recording, accounts.
+Not yet built: recording, accounts.
 
 ## License
 

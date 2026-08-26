@@ -4,8 +4,10 @@ import { WebSocket, WebSocketServer } from "ws";
 import type { ClientMessage, ServerMessage } from "./types.js";
 import { RateLimiter } from "./rate-limit.js";
 
-// Phase 1 scope: 1:1 calls only. Bump this once group calls (phase 3) land.
-const MAX_PEERS_PER_ROOM = 2;
+// Phase 3: small full-mesh group calls. Each client opens a direct connection
+// to every other peer, so cost/bandwidth grows with the square of room size —
+// keep this modest until there's a real SFU in front of larger rooms.
+const MAX_PEERS_PER_ROOM = 4;
 const PORT = Number(process.env.PORT) || 8080;
 
 // Trust X-Real-IP only from loopback (i.e. our own nginx) — a client
@@ -66,8 +68,8 @@ function send(ws: WebSocket, message: ServerMessage): void {
   }
 }
 
-function otherPeer(room: string, selfId: string): Peer | undefined {
-  return rooms.get(room)?.find((p) => p.id !== selfId);
+function otherPeers(room: string, selfId: string): Peer[] {
+  return rooms.get(room)?.filter((p) => p.id !== selfId) ?? [];
 }
 
 function leaveRoom(peer: Peer): void {
@@ -151,10 +153,12 @@ wss.on("connection", (ws, req) => {
       self = { id: randomUUID(), ws, room };
       rooms.set(room, [...existing, self]);
 
-      const peer = otherPeer(room, self.id);
-      console.log(`[join] room=${room} self=${self.id.slice(0, 8)} existingPeer=${peer?.id.slice(0, 8) ?? "none"}`);
-      send(ws, { type: "joined", selfId: self.id, peerId: peer?.id ?? null });
-      if (peer) {
+      const peers = otherPeers(room, self.id);
+      console.log(
+        `[join] room=${room} self=${self.id.slice(0, 8)} existingPeers=${peers.length ? peers.map((p) => p.id.slice(0, 8)).join(",") : "none"}`,
+      );
+      send(ws, { type: "joined", selfId: self.id, peerIds: peers.map((p) => p.id) });
+      for (const peer of peers) {
         send(peer.ws, { type: "peer-joined", peerId: self.id });
       }
       return;
@@ -162,11 +166,11 @@ wss.on("connection", (ws, req) => {
 
     if (msg.type === "signal") {
       if (!self) return;
-      const target = otherPeer(self.room, self.id);
+      const target = rooms.get(self.room)?.find((p) => p.id === msg.to);
       console.log(
-        `[signal] room=${self.room} from=${self.id.slice(0, 8)} to=${msg.to.slice(0, 8)} kind=${msg.data.kind} matched=${target?.id === msg.to}`,
+        `[signal] room=${self.room} from=${self.id.slice(0, 8)} to=${msg.to.slice(0, 8)} kind=${msg.data.kind} matched=${!!target}`,
       );
-      if (target && target.id === msg.to) {
+      if (target) {
         send(target.ws, { type: "signal", from: self.id, data: msg.data });
       }
       return;
