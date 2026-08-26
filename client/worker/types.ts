@@ -3,10 +3,8 @@ export interface Env {
   ASSETS: Fetcher;
   GOOGLE_CLIENT_ID: string;
   GOOGLE_CLIENT_SECRET: string;
-  RESEND_API_KEY: string;
-  EMAIL_FROM: string;
-  // Origin the worker is actually reachable at (used for OAuth redirect_uri
-  // and links in emails) — e.g. https://pulsly.<subdomain>.workers.dev
+  // Origin the worker is actually reachable at (used for the OAuth
+  // redirect_uri) — e.g. https://pulsly.<subdomain>.workers.dev
   PUBLIC_URL: string;
 }
 

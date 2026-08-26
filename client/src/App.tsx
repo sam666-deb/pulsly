@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { Home } from "./pages/Home";
 import { Room } from "./pages/Room";
+import { History } from "./pages/History";
 
 function roomIdFromPath(path: string): string | null {
   const match = path.match(/^\/room\/([\w-]+)$/);
@@ -22,9 +23,7 @@ export default function App() {
   };
 
   const roomId = roomIdFromPath(path);
-  return roomId ? (
-    <Room roomId={roomId} onLeave={() => navigate("/")} />
-  ) : (
-    <Home onCreateRoom={(id) => navigate(`/room/${id}`)} />
-  );
+  if (roomId) return <Room roomId={roomId} onLeave={() => navigate("/")} />;
+  if (path === "/history") return <History onBack={() => navigate("/")} />;
+  return <Home navigate={navigate} />;
 }

@@ -1,0 +1,69 @@
+.history-page {
+  min-height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+.history-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1.1rem 1.5rem;
+}
+
+.history-body {
+  flex: 1;
+  width: 100%;
+  max-width: 640px;
+  margin: 0 auto;
+  padding: 0 1.5rem 3rem;
+}
+
+.history-body h1 {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 1.6rem;
+  margin: 0 0 1rem;
+}
+
+.history-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.history-entry {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 0.85rem 1rem;
+}
+
+.history-entry-main {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.75rem;
+  font-weight: 600;
+}
+
+.history-room {
+  font-family: var(--font-display);
+}
+
+.history-when {
+  color: var(--text-muted);
+  font-size: 0.85rem;
+  font-weight: 500;
+}
+
+.history-entry-meta {
+  display: flex;
+  gap: 0.9rem;
+  color: var(--text-muted);
+  font-size: 0.85rem;
+  margin-top: 0.3rem;
+}

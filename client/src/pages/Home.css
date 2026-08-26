@@ -70,3 +70,79 @@
   opacity: 0.5;
   cursor: not-allowed;
 }
+
+.account-button {
+  position: fixed;
+  top: 1.1rem;
+  left: 1.25rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 0.5rem 0.9rem;
+  color: var(--text);
+  font-size: 0.85rem;
+  font-weight: 600;
+  z-index: 30;
+  /* Leaves room for the theme toggle in the opposite corner and stops a
+     long name/email from pushing the button off-screen on a narrow phone. */
+  max-width: min(60vw, 220px);
+}
+
+.account-button span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.account-button:hover {
+  border-color: var(--accent);
+}
+
+.account-avatar {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  flex: none;
+}
+
+.account-menu-wrap {
+  position: fixed;
+  top: 1.1rem;
+  left: 1.25rem;
+  z-index: 30;
+}
+
+.account-menu-wrap .account-button {
+  position: static;
+}
+
+.account-menu {
+  position: absolute;
+  top: calc(100% + 0.4rem);
+  left: 0;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 0.4rem;
+  display: flex;
+  flex-direction: column;
+  min-width: 140px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+}
+
+.account-menu button {
+  background: none;
+  border: none;
+  text-align: left;
+  padding: 0.5rem 0.6rem;
+  border-radius: 6px;
+  color: var(--text);
+  font-size: 0.85rem;
+}
+
+.account-menu button:hover {
+  background: var(--surface-alt);
+}

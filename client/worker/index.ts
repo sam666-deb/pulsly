@@ -1,5 +1,4 @@
 import { googleAuthStart, googleAuthCallback } from "./google";
-import { requestMagicLink, verifyMagicLink } from "./magicLink";
 import { getHistory, startHistory, endHistory, requireUser } from "./history";
 import { parseCookies, setCookie } from "./cookies";
 import { deleteSession } from "./db";
@@ -13,8 +12,6 @@ export default {
 
     if (pathname === "/api/auth/google/start") return googleAuthStart(env);
     if (pathname === "/api/auth/google/callback") return googleAuthCallback(request, env);
-    if (pathname === "/api/auth/magic-link/request" && method === "POST") return requestMagicLink(request, env);
-    if (pathname === "/api/auth/magic-link/verify") return verifyMagicLink(request, env);
 
     if (pathname === "/api/auth/me" && method === "GET") {
       const user = await requireUser(request, env);

@@ -6,6 +6,9 @@
   "observability": {
     "enabled": true
   },
+  "vars": {
+    "PUBLIC_URL": "https://pulsly.samdanymdahsanahmed.workers.dev"
+  },
   "assets": {
     "binding": "ASSETS",
     "not_found_handling": "single-page-application"

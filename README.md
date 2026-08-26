@@ -11,7 +11,9 @@ Browser-based video calling. No accounts, no downloads — start a call, send th
 
 ## What it does
 
-- Video calls over a shared room link, up to 4 people — no sign-up, no install
+- Video calls over a shared room link, up to 4 people — still no sign-up required
+- Optional accounts (Google sign-in) for people who want more: a permanent personal room
+  link instead of a random code each time, and a history of past calls
 - Real display names — set once, shown on both tiles instead of generic "You"/"Them"
 - Real NAT traversal via a self-hosted TURN relay, not just STUN (works across different
   networks — home wifi to cellular, corporate firewalls, the works)
@@ -67,10 +69,19 @@ sequenceDiagram
 | Piece | What | Where | Cost |
 |---|---|---|---|
 | Client | React + TypeScript + Vite | Cloudflare Workers (static assets) | $0 |
+| Accounts API | Same Worker, `worker/` route handlers | Cloudflare Workers | $0 |
+| Accounts DB | D1 (serverless SQLite) | Cloudflare | $0 |
 | Signaling | Node.js + `ws`, plain WebSocket | Oracle Cloud Always Free VM | $0 |
 | TURN / STUN | coturn, self-hosted | same VM | $0 |
 | TLS | Let's Encrypt, auto-renewing | same VM, via nginx | $0 |
 | Domain | DuckDNS dynamic DNS | `pulsly.duckdns.org` | $0 |
+
+The same Cloudflare Worker that serves the client's static assets also handles `/api/*` —
+Google OAuth (authorization-code flow, CSRF-protected via a signed state cookie), session
+cookies (opaque tokens in D1, not JWTs, so logout actually revokes them instead of just
+expiring), and call history. Sign-in is entirely optional; anonymous ad-hoc calls work
+exactly as before. Recordings still save straight to your device, never touch the server —
+history tracks *when* a call happened and who was in it, not the recording file itself.
 
 The signaling server mints its own short-lived TURN credentials using coturn's REST-auth
 scheme (an HMAC over a shared secret that never leaves the server) and serves them from a
@@ -125,13 +136,18 @@ VITE_SIGNALING_URL=wss://pulsly.duckdns.org
 ```
 client/                 React + TypeScript frontend (Vite), deployed to Cloudflare Workers
   src/
-    pages/               Home and Room — the two top-level views
+    pages/               Home, Room, History — the top-level views
     hooks/               useCall (WebRTC/signaling), useRecorder (client-side call
-                         recording), useTheme, useDisplayName
+                         recording), useAuth, useCallHistory, useTheme, useDisplayName
     lib/                 ice-servers fetch, shared signaling message types
     components/          icons.tsx (hand-drawn SVG icon set), Logo.tsx (brand mark)
-    App.tsx              route switch between Home and Room
+    App.tsx              route switch between Home, Room, and History
     main.tsx, index.css  entry point, design tokens, theme variables
+  worker/                the accounts backend — same Worker as the static assets
+    index.ts             routes /api/* requests, falls through to ASSETS otherwise
+    google.ts             Google OAuth flow
+    db.ts, history.ts     D1 queries, session/user lookup, call history routes
+    schema.sql            users / sessions / call_history tables
 
 server/                 WebSocket signaling server (Node + ws), self-hosted on the VM
   src/
@@ -163,9 +179,14 @@ TURN_SECRET=<must match coturn's static-auth-secret>
 ## Status
 
 Working and live: group calling (full mesh, up to 4 people), TURN relay, chat, reactions,
-screen share with spotlight/pin layout, client-side call recording, connection quality, call
-timer, keyboard shortcuts, light/dark theme, display names, a real logo, rate limiting,
-permanent zero-cost hosting.
+screen share with spotlight/pin layout, client-side call recording, optional accounts
+(Google sign-in) with personal rooms and call history, connection quality, call timer,
+keyboard shortcuts, light/dark theme, display names, a real logo, rate limiting, permanent
+zero-cost hosting.
+
+Not built: passwordless email sign-in (dropped — would need a verified domain for real
+recipients, which the current DuckDNS setup can't provide), recording other than
+client-side.
 
 Not yet built: recording, accounts.
 

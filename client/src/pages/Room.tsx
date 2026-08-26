@@ -4,6 +4,8 @@ import { useTheme } from "../hooks/useTheme";
 import { useDisplayName } from "../hooks/useDisplayName";
 import { useElementSize } from "../hooks/useElementSize";
 import { useRecorder } from "../hooks/useRecorder";
+import { useAuth } from "../hooks/useAuth";
+import { useCallHistory } from "../hooks/useCallHistory";
 import {
   MicIcon,
   CameraIcon,
@@ -201,6 +203,8 @@ function CallRoom({
     connectedAt,
     leave,
   } = useCall(roomId, displayName);
+  const { user } = useAuth();
+  useCallHistory(user, roomId, peers);
   const { theme, toggleTheme } = useTheme();
   const {
     isRecording,

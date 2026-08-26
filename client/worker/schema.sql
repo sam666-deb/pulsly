@@ -16,14 +16,6 @@ CREATE TABLE IF NOT EXISTS sessions (
 
 CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id);
 
-CREATE TABLE IF NOT EXISTS magic_links (
-  token TEXT PRIMARY KEY,
-  email TEXT NOT NULL,
-  created_at INTEGER NOT NULL,
-  expires_at INTEGER NOT NULL,
-  used INTEGER NOT NULL DEFAULT 0
-);
-
 CREATE TABLE IF NOT EXISTS call_history (
   id TEXT PRIMARY KEY,
   user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
