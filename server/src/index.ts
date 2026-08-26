@@ -1,11 +1,36 @@
 import { createHmac, randomUUID } from "node:crypto";
-import { createServer } from "node:http";
+import { createServer, type IncomingMessage } from "node:http";
 import { WebSocket, WebSocketServer } from "ws";
 import type { ClientMessage, ServerMessage } from "./types.js";
+import { RateLimiter } from "./rate-limit.js";
 
 // Phase 1 scope: 1:1 calls only. Bump this once group calls (phase 3) land.
 const MAX_PEERS_PER_ROOM = 2;
 const PORT = Number(process.env.PORT) || 8080;
+
+// Trust X-Real-IP only from loopback (i.e. our own nginx) — a client
+// connecting directly could otherwise forge any IP it wants and dodge
+// these limits entirely. Direct access to this port is also firewalled
+// off at the network level; nginx is the only intended path in.
+function getClientIp(req: IncomingMessage): string {
+  const remote = req.socket.remoteAddress ?? "unknown";
+  const isLoopback = remote === "127.0.0.1" || remote === "::1" || remote === "::ffff:127.0.0.1";
+  if (isLoopback) {
+    const forwarded = req.headers["x-real-ip"];
+    if (typeof forwarded === "string" && forwarded) return forwarded;
+  }
+  return remote;
+}
+
+const connectionLimiter = new RateLimiter(15, 60_000); // 15 new WS connections / IP / minute
+const iceServersLimiter = new RateLimiter(20, 60_000); // 20 credential fetches / IP / minute
+const MESSAGE_LIMIT = 60;
+const MESSAGE_WINDOW_MS = 10_000; // 60 signaling messages / connection / 10s
+
+setInterval(() => {
+  connectionLimiter.sweep();
+  iceServersLimiter.sweep();
+}, 5 * 60_000).unref();
 
 // Coturn's static-auth-secret — used to mint short-lived TURN credentials via
 // the standard REST-API scheme (username = expiry timestamp, credential =
@@ -61,6 +86,12 @@ function leaveRoom(peer: Peer): void {
 
 const httpServer = createServer((req, res) => {
   if (req.url === "/ice-servers") {
+    const ip = getClientIp(req);
+    if (!iceServersLimiter.check(ip)) {
+      console.log(`[rate-limit] ice-servers ip=${ip}`);
+      res.writeHead(429, { "Content-Type": "text/plain" }).end("Too Many Requests");
+      return;
+    }
     res.setHeader("Access-Control-Allow-Origin", "*");
     res.setHeader("Content-Type", "application/json");
     res.end(JSON.stringify(iceServers()));
@@ -71,10 +102,29 @@ const httpServer = createServer((req, res) => {
 
 const wss = new WebSocketServer({ server: httpServer });
 
-wss.on("connection", (ws) => {
+wss.on("connection", (ws, req) => {
+  const ip = getClientIp(req);
+  if (!connectionLimiter.check(ip)) {
+    console.log(`[rate-limit] connection ip=${ip}`);
+    ws.close(1008, "rate limited");
+    return;
+  }
+
   let self: Peer | null = null;
+  const messageTimestamps: number[] = [];
 
   ws.on("message", (raw) => {
+    const now = Date.now();
+    while (messageTimestamps.length && messageTimestamps[0] <= now - MESSAGE_WINDOW_MS) {
+      messageTimestamps.shift();
+    }
+    messageTimestamps.push(now);
+    if (messageTimestamps.length > MESSAGE_LIMIT) {
+      console.log(`[rate-limit] messages ip=${ip}`);
+      ws.close(1008, "rate limited");
+      return;
+    }
+
     let msg: ClientMessage;
     try {
       msg = JSON.parse(raw.toString());

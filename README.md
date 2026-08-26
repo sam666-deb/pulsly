@@ -71,6 +71,13 @@ credentials at the start of every call.
 Both backend services run as systemd units (`pulsly-signaling`, `coturn`) so they restart on
 crash and survive VM reboots.
 
+The signaling server rate-limits by client IP: new WebSocket connections, messages per
+connection, and `/ice-servers` credential requests all have sliding-window caps, enforced
+server-side with an in-memory limiter (no extra service needed at this scale). Port 8080
+itself is only reachable from `localhost` on the VM — nginx is the sole path in from the
+internet, so those limits can't be dodged by connecting directly and forging the client-IP
+header nginx would normally set.
+
 ## Cost
 
 Everything runs on genuinely free tiers — no trials, nothing that starts billing later:
@@ -119,6 +126,7 @@ client/                 React + TypeScript frontend (Vite), deployed to Cloudfla
 server/                 WebSocket signaling server (Node + ws), self-hosted on the VM
   src/
     index.ts             room/signal relay + the /ice-servers TURN-credential endpoint
+    rate-limit.ts        in-memory sliding-window limiter
     types.ts             shared message types
 ```
 
@@ -145,11 +153,10 @@ TURN_SECRET=<must match coturn's static-auth-secret>
 ## Status
 
 Working and live: 1:1 calling, TURN relay, chat, reactions, screen share, connection quality,
-call timer, keyboard shortcuts, light/dark theme, display names, a real logo, permanent
-zero-cost hosting.
+call timer, keyboard shortcuts, light/dark theme, display names, a real logo, rate limiting,
+permanent zero-cost hosting.
 
-Not yet built: group calls (3+ people, would need a mesh or SFU), rate-limiting on the
-signaling server, recording, accounts.
+Not yet built: group calls (3+ people, would need a mesh or SFU), recording, accounts.
 
 ## License
 
