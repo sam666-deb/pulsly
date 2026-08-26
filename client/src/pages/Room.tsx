@@ -26,6 +26,8 @@ function VideoTile({
   label,
   width,
   height,
+  fill,
+  fit = "cover",
   presenting,
   pinned,
   onTogglePin,
@@ -36,6 +38,8 @@ function VideoTile({
   label: string;
   width?: number;
   height?: number;
+  fill?: boolean;
+  fit?: "cover" | "contain";
   presenting?: boolean;
   pinned?: boolean;
   onTogglePin?: () => void;
@@ -47,12 +51,12 @@ function VideoTile({
     if (ref.current) ref.current.srcObject = stream;
   }, [stream]);
 
+  let className = small ? "video-tile video-tile-small" : "video-tile";
+  if (fill) className += " video-tile-fill";
+
   return (
-    <div
-      className={small ? "video-tile video-tile-small" : "video-tile"}
-      style={width !== undefined ? { width, height } : undefined}
-    >
-      <video ref={ref} autoPlay playsInline muted={muted} />
+    <div className={className} style={!fill && width !== undefined ? { width, height } : undefined}>
+      <video ref={ref} autoPlay playsInline muted={muted} style={{ objectFit: fit }} />
       {presenting && <span className="presenting-badge">Presenting</span>}
       <span className="video-label">{label}</span>
       {onTogglePin && (
@@ -205,7 +209,6 @@ function CallRoom({
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const [gridRef, gridSize] = useElementSize<HTMLDivElement>();
-  const [spotlightRef, spotlightSize] = useElementSize<HTMLDivElement>();
 
   const shareLink = `${window.location.origin}/room/${roomId}`;
   const unread = chatOpen ? 0 : messages.length - seenCountRef.current;
@@ -255,7 +258,6 @@ function CallRoom({
   const videoGridColumns = Math.max(1, Math.ceil(Math.sqrt(tileCount)));
   const videoGridRows = Math.max(1, Math.ceil(tileCount / videoGridColumns));
   const tileSize = computeTileSize(gridSize.width, gridSize.height, videoGridColumns, videoGridRows);
-  const spotlightTileSize = computeTileSize(spotlightSize.width, spotlightSize.height, 1, 1);
 
   // If the pinned person leaves the call, fall back to auto-spotlight/gallery
   // instead of leaving the pin pointed at nobody.
@@ -314,13 +316,13 @@ function CallRoom({
   if (spotlight) {
     videoArea = (
       <div className="spotlight-layout">
-        <div className="spotlight-main" ref={spotlightRef}>
+        <div className="spotlight-main">
           <VideoTile
             stream={spotlight.stream}
             muted={spotlight.id === "self"}
             label={spotlight.label}
-            width={spotlightTileSize.width}
-            height={spotlightTileSize.height}
+            fill
+            fit={spotlight.presenting ? "contain" : "cover"}
             presenting={spotlight.presenting}
             pinned={pinnedId === spotlight.id}
             onTogglePin={() => togglePin(spotlight!.id)}
