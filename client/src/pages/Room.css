@@ -142,30 +142,29 @@
   flex: 1;
   display: flex;
   flex-direction: column;
-  align-items: center;
+  align-items: stretch;
   justify-content: center;
   gap: 1.1rem;
-  padding: 0 1.5rem calc(6rem + env(safe-area-inset-bottom, 0px));
+  padding: 1.25rem 1.5rem calc(6rem + env(safe-area-inset-bottom, 0px));
+  min-height: 0;
 }
 
 .video-grid {
   position: relative;
+  flex: 1;
+  min-height: 0;
   width: 100%;
   max-width: 1000px;
+  margin: 0 auto;
   display: grid;
   grid-template-columns: repeat(var(--video-cols, 1), 1fr);
+  grid-template-rows: repeat(var(--video-rows, 1), 1fr);
   gap: 0.75rem;
 }
 
 @media (max-width: 640px) {
   .video-grid {
     gap: 0.5rem;
-  }
-
-  /* 16:9 tiles in a 2-column mobile grid become tiny letterbox strips —
-     closer-to-square reads much better at this size. */
-  .video-tile {
-    aspect-ratio: 1;
   }
 }
 
@@ -221,7 +220,7 @@
   border: 1px solid var(--border);
   border-radius: 12px;
   overflow: hidden;
-  aspect-ratio: 16 / 9;
+  min-height: 0;
 }
 
 .video-tile video {

@@ -137,6 +137,7 @@ function CallRoom({
   const elapsed = connectedAt ? formatElapsed(now - connectedAt) : null;
   const tileCount = peers.length + 1;
   const videoGridColumns = Math.max(1, Math.ceil(Math.sqrt(tileCount)));
+  const videoGridRows = Math.max(1, Math.ceil(tileCount / videoGridColumns));
 
   useEffect(() => {
     if (chatOpen) seenCountRef.current = messages.length;
@@ -214,7 +215,10 @@ function CallRoom({
       </header>
 
       <div className="room-main">
-        <div className="video-grid" style={{ "--video-cols": videoGridColumns } as CSSProperties}>
+        <div
+          className="video-grid"
+          style={{ "--video-cols": videoGridColumns, "--video-rows": videoGridRows } as CSSProperties}
+        >
           <VideoTile stream={screenStream ?? localStream} muted label={displayName} />
           {peers.map((peer) => (
             <VideoTile key={peer.id} stream={peer.stream} muted={false} label={peer.name ?? "Guest"} />
