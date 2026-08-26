@@ -8,7 +8,36 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.5rem;
   padding: 1.1rem 1.5rem;
+}
+
+@media (max-width: 480px) {
+  .room-bar {
+    padding: 0.75rem 1rem;
+  }
+
+  .room-bar-right {
+    gap: 0.4rem;
+  }
+
+  .call-timer {
+    font-size: 0.75rem;
+  }
+
+  .room-code {
+    padding: 0.3rem 0.4rem 0.3rem 0.6rem;
+  }
+
+  .room-code code {
+    font-size: 0.72rem;
+  }
+
+  .room-code span {
+    font-size: 0.68rem;
+    padding: 0.24rem 0.45rem;
+  }
 }
 
 .name-gate {

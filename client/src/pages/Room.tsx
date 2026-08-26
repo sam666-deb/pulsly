@@ -46,11 +46,11 @@ function VideoTile({
   );
 }
 
-// Largest tile size (at the given aspect ratio) that still lets `cols` of
-// them fit per row and `rows` of them fit per column within the measured
-// container — the same "fit N boxes into a space" math real conferencing
-// UIs use, rather than letting tiles stretch to whatever shape the
-// container happens to be on a given device.
+// Tile size that fills the measured container exactly for a `cols` x `rows`
+// grid (so there's no wasted empty space), only pulled back from that
+// natural fill if it would be an extreme sliver — narrower than 1:2 or
+// wider than 2:1 — in which case it's capped at that ratio and centered
+// with whatever margin is left, rather than distorted further.
 function computeTileSize(
   containerWidth: number,
   containerHeight: number,
@@ -60,12 +60,20 @@ function computeTileSize(
   const fallback = { width: 280, height: 210 };
   if (containerWidth <= 0 || containerHeight <= 0) return fallback;
 
-  const aspect = containerWidth >= containerHeight ? 16 / 9 : 3 / 4;
-  const maxWidthFromWidth = (containerWidth - (cols - 1) * GRID_GAP) / cols;
-  const maxHeightFromHeight = (containerHeight - (rows - 1) * GRID_GAP) / rows;
-  const maxWidthFromHeight = maxHeightFromHeight * aspect;
-  const width = Math.max(0, Math.min(maxWidthFromWidth, maxWidthFromHeight));
-  return { width, height: width / aspect };
+  const MIN_ASPECT = 1 / 2;
+  const MAX_ASPECT = 2;
+
+  const naturalWidth = (containerWidth - (cols - 1) * GRID_GAP) / cols;
+  const naturalHeight = (containerHeight - (rows - 1) * GRID_GAP) / rows;
+  const naturalAspect = naturalWidth / naturalHeight;
+
+  if (naturalAspect < MIN_ASPECT) {
+    return { width: naturalWidth, height: naturalWidth / MIN_ASPECT };
+  }
+  if (naturalAspect > MAX_ASPECT) {
+    return { width: naturalHeight * MAX_ASPECT, height: naturalHeight };
+  }
+  return { width: naturalWidth, height: naturalHeight };
 }
 
 function NamePrompt({ onSubmit }: { onSubmit: (name: string) => void }) {
