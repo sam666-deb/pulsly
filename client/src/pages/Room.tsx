@@ -119,11 +119,14 @@ function ReactionLayer({ reactions }: { reactions: Reaction[] }) {
   );
 }
 
-function NamePrompt({ onSubmit }: { onSubmit: (name: string) => void }) {
+function NamePrompt({ onSubmit, onBack }: { onSubmit: (name: string) => void; onBack: () => void }) {
   const [value, setValue] = useState("");
 
   return (
     <main className="name-gate">
+      <button className="name-gate-back" onClick={onBack} aria-label="Back to home">
+        ← Back
+      </button>
       <form
         className="name-gate-card"
         onSubmit={(e) => {
@@ -560,6 +563,6 @@ function CallRoom({
 export function Room({ roomId, onLeave }: { roomId: string; onLeave: () => void }) {
   const { name, setName } = useDisplayName();
 
-  if (!name) return <NamePrompt onSubmit={setName} />;
+  if (!name) return <NamePrompt onSubmit={setName} onBack={onLeave} />;
   return <CallRoom roomId={roomId} onLeave={onLeave} displayName={name} />;
 }

@@ -188,8 +188,6 @@ Not built: passwordless email sign-in (dropped — would need a verified domain 
 recipients, which the current DuckDNS setup can't provide), recording other than
 client-side.
 
-Not yet built: recording, accounts.
-
 ## License
 
 [MIT](LICENSE)
